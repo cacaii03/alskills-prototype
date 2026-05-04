@@ -31,8 +31,7 @@ function doGet(e) {
     // If no action is provided, serve the dashboard UI (HtmlService).
     if (!action) {
       return HtmlService
-        .createTemplateFromFile("SimpleIndex")
-        .evaluate()
+        .createHtmlOutput(buildSimpleIndexHtml())
         .setTitle("ALSKILL")
         .addMetaTag("viewport", "width=device-width, initial-scale=1");
     }
@@ -121,6 +120,37 @@ function respondJson(obj) {
  */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * injectBetween_
+ * Replaces the span between a unique start marker and the next endMarker in source.
+ */
+function injectBetween_(source, startMarker, endMarker, insertion) {
+  var i = source.indexOf(startMarker);
+  if (i === -1) {
+    throw new Error("injectBetween_: start marker not found: " + startMarker);
+  }
+  i += startMarker.length;
+  var j = source.indexOf(endMarker, i);
+  if (j === -1) {
+    throw new Error("injectBetween_: end marker not found after " + startMarker);
+  }
+  return source.substring(0, i) + insertion + source.substring(j);
+}
+
+/**
+ * buildSimpleIndexHtml
+ * Assembles the SimpleIndex shell with inlined StylesRaw and SimpleClient so the
+ * HTML files stay valid for editors (no template tags inside style/script).
+ */
+function buildSimpleIndexHtml() {
+  var html = HtmlService.createHtmlOutputFromFile("SimpleIndex").getContent();
+  var css = HtmlService.createHtmlOutputFromFile("StylesRaw").getContent();
+  var js = HtmlService.createHtmlOutputFromFile("SimpleClient").getContent();
+  html = injectBetween_(html, "<style data-alskill-css>", "</style>", "\n" + css + "\n");
+  html = injectBetween_(html, "<script data-alskill-js>", "</script>", "\n" + js + "\n");
+  return html;
 }
 
 /**
