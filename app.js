@@ -1,7 +1,10 @@
 "use strict";
 
+// IMPORTANT:
+// Set this to your Cloudflare Worker URL to avoid browser CORS issues.
+// Example: "https://your-worker-name.your-subdomain.workers.dev"
 const GAS_WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbzbWmKwqpiwLxqI_HUhMAnpVe1rckO8ocGJeWtc7CRonFQd4kjQYGsQFCEBNYBtOGMfYg/exec";
+  "https://your-worker-name.your-subdomain.workers.dev";
 
 let USE_REMOTE_API = true;
 
