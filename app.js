@@ -6,7 +6,8 @@
 const GAS_WEBAPP_URL =
   "https://your-worker-name.your-subdomain.workers.dev";
 
-let USE_REMOTE_API = true;
+// Default to local mode to avoid CORS issues in static hosting.
+let USE_REMOTE_API = false;
 
 async function apiGet(action, params = {}) {
   const url = new URL(GAS_WEBAPP_URL);

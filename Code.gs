@@ -28,6 +28,15 @@ function doGet(e) {
   var action = String(params.action || "").trim();
 
   try {
+    // If no action is provided, serve the dashboard UI (HtmlService).
+    if (!action) {
+      return HtmlService
+        .createTemplateFromFile("SimpleIndex")
+        .evaluate()
+        .setTitle("ALSKILL")
+        .addMetaTag("viewport", "width=device-width, initial-scale=1");
+    }
+
     if (action === "initializeDatabase") return respondJson(initializeDatabase());
     if (action === "fetchQuestions") return respondJson(fetchQuestions(params.course));
     if (action === "getAdminAnalytics") return respondJson(getAdminAnalytics());
@@ -97,6 +106,113 @@ function respondJson(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * include
+ * Purpose:
+ * Allows HtmlService templates to inline other files.
+ * Parameters:
+ * filename (String) - Apps Script HTML filename (without extension).
+ * Logic:
+ * 1) Load the HTML file content.
+ * Output:
+ * HTML string.
+ */
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * submitAssessment
+ * Purpose:
+ * Simplified "store-only" endpoint. Saves an alumni profile snapshot and
+ * raw questionnaire answers directly to Google Sheets.
+ *
+ * Parameters:
+ * payload (Object)
+ * - name (String)
+ * - email (String)
+ * - course (String)
+ * - major (String)
+ * - batch (Number)
+ * - answers (Array<Object>): [{ question_id, question_text, category, answer, score }]
+ *
+ * Logic:
+ * 1) Ensure database sheets exist.
+ * 2) Upsert alumni in Users (by email).
+ * 3) Append answer rows to Responses (with computed score).
+ *
+ * Output:
+ * { success: boolean, message: string, user_id: string, saved_count: number }
+ */
+function submitAssessment(payload) {
+  initializeDatabase();
+  if (!payload || !payload.email || !payload.name || !payload.course || !payload.batch) {
+    return { success: false, message: "Missing required profile fields." };
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var usersSheet = ss.getSheetByName(SHEET_NAMES.USERS);
+  var responsesSheet = ss.getSheetByName(SHEET_NAMES.RESPONSES);
+
+  var email = String(payload.email).toLowerCase();
+  var users = usersSheet.getDataRange().getValues();
+  var userId = null;
+  var userRowIndex = -1;
+
+  for (var i = 1; i < users.length; i++) {
+    if (String(users[i][2]).toLowerCase() === email) {
+      userId = String(users[i][0]);
+      userRowIndex = i + 1; // sheet is 1-indexed
+      break;
+    }
+  }
+
+  if (!userId) {
+    userId = "A" + new Date().getTime().toString().slice(-6);
+    usersSheet.appendRow([
+      userId,
+      payload.name,
+      email,
+      "", // password (unused in simple mode)
+      payload.course,
+      payload.major || "-",
+      Number(payload.batch),
+      "Alumni"
+    ]);
+  } else {
+    // Update basic profile fields to keep the latest snapshot
+    usersSheet.getRange(userRowIndex, 2, 1, 6).setValues([[
+      payload.name,
+      email,
+      "", // password
+      payload.course,
+      payload.major || "-",
+      Number(payload.batch)
+    ]]);
+  }
+
+  var answers = payload.answers || [];
+  if (!Array.isArray(answers)) answers = [];
+
+  if (answers.length === 0) {
+    return { success: true, message: "Profile saved. No answers provided.", user_id: userId, saved_count: 0 };
+  }
+
+  var rows = answers.map(function(a) {
+    return [
+      "R" + Utilities.getUuid().slice(0, 8),
+      userId,
+      a.question_id || "",
+      a.answer || "",
+      Number(a.score || 0)
+    ];
+  });
+
+  responsesSheet.getRange(responsesSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+
+  return { success: true, message: "Assessment saved successfully.", user_id: userId, saved_count: rows.length };
 }
 
 /**

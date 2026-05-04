@@ -1,5 +1,237 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ALSKILL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style><?!= include("StylesRaw"); ?></style>
+  </head>
+  <body>
+    <header class="global-header">
+      <div class="global-brand">
+        <span class="logo-mark" aria-hidden="true"></span>
+        <div>
+          <strong>ALSKILL Platform</strong>
+          <p>Alumni Skill Analytics System</p>
+        </div>
+      </div>
+    </header>
+
+    <main id="authSection" class="auth-page panel active">
+      <section class="auth-shell">
+        <aside class="auth-brand card fade-up">
+          <p class="auth-badge">Alumni Skill Analytics</p>
+          <h1>ALSKILL</h1>
+          <p class="tagline">From Data to Direction</p>
+          <p class="section-note">A modern platform for competency evaluation, development tracking, and institutional analytics.</p>
+          <div class="login-photo-wrap">
+            <div style="padding: 12px; color: rgba(255,255,255,.9); font-size: .9rem;">
+              Login visual (optional). For Apps Script, upload `img1.jpg` to Drive and paste a public image URL here.
+            </div>
+          </div>
+        </aside>
+
+        <article class="card auth-card fade-up">
+          <div class="auth-switch">
+            <button id="showLoginBtn" class="primary ripple" type="button">Login</button>
+            <button id="showRegisterBtn" class="ghost ripple" type="button">Register</button>
+          </div>
+
+          <div id="loginPanel">
+            <h3>Sign In</h3>
+            <form id="loginForm" class="form">
+              <label>Institutional Email or Student ID<input type="text" name="email" required /></label>
+              <label>Password<input type="password" name="password" required /></label>
+              <button type="submit" class="primary ripple">Login to Dashboard</button>
+            </form>
+            <p id="loginStatus" class="status feedback"></p>
+          </div>
+
+          <div id="registerPanel" class="hidden">
+            <h3>Create Alumni Account</h3>
+            <form id="registerForm" class="form">
+              <label>Full Name<input type="text" name="name" required /></label>
+              <label>Institutional Email<input type="email" name="email" required /></label>
+              <label>Password<input type="password" name="password" required /></label>
+              <label>Course
+                <select name="course" required>
+                  <option value="">Select course</option>
+                  <option>BSIT</option>
+                  <option>BSBA - Marketing</option>
+                  <option>BSED</option>
+                  <option>BEED</option>
+                  <option>BECED</option>
+                </select>
+              </label>
+              <label>Major<input type="text" name="major" placeholder="Optional" /></label>
+              <label>Batch<input type="number" name="batch" min="1990" max="2100" required /></label>
+              <button type="submit" class="primary ripple">Create Account</button>
+            </form>
+            <p id="registerStatus" class="status feedback"></p>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div id="appShell" class="app-shell hidden">
+      <aside id="sidebar" class="sidebar">
+        <div class="brand">
+          <button id="sidebarToggleBtn" class="icon-btn ripple" type="button" title="Toggle sidebar">☰</button>
+          <div class="brand-text">
+            <h2>ALSKILL</h2>
+            <p>Analytics Dashboard</p>
+          </div>
+        </div>
+        <nav class="side-nav">
+          <button class="nav-btn ripple active" data-section="alumniSection"><span>▣</span><em>Dashboard</em></button>
+          <button class="nav-btn ripple" data-section="adminSection"><span>◉</span><em>Analytics</em></button>
+          <button class="nav-btn ripple" data-section="infoSection"><span>☰</span><em>Reports</em></button>
+          <button class="nav-btn ripple" data-section="settingsSection"><span>⚙</span><em>Settings</em></button>
+        </nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="top-search">
+            <input id="globalSearch" type="text" placeholder="Search course, alumni, or category..." />
+          </div>
+          <div class="top-actions">
+            <button class="icon-btn ripple" type="button" title="Notifications">🔔</button>
+            <span id="sessionLabel" class="muted">Not logged in</span>
+            <button id="topLogoutBtn" class="ghost ripple">Logout</button>
+          </div>
+        </header>
+
+        <main class="container">
+          <section id="alumniSection" class="panel">
+            <h2>Dashboard</h2>
+            <p class="section-note">Overview of profile completion, competency results, and latest assessment activity.</p>
+            <div id="alumniKpi" class="kpi-grid"></div>
+            <div class="grid two">
+              <article class="card">
+                <h3>Profile Summary</h3>
+                <div id="profileCard" class="muted">Please log in as Alumni to view profile details.</div>
+              </article>
+              <article class="card">
+                <h3>Skill Questionnaire</h3>
+                <div class="inline-controls">
+                  <label>Course
+                    <select id="questionCourseSelect">
+                      <option>BSIT</option>
+                      <option>BSBA - Marketing</option>
+                      <option>BSED</option>
+                      <option>BEED</option>
+                      <option>BECED</option>
+                    </select>
+                  </label>
+                  <button id="loadQuestionsBtn" class="ghost ripple">Load Questions</button>
+                </div>
+                <form id="questionnaireForm" class="form"></form>
+                <button id="submitResponsesBtn" class="primary ripple">Submit Responses</button>
+              </article>
+            </div>
+            <div class="grid two">
+              <article class="card">
+                <h3>Skill Score Cards</h3>
+                <div id="scoreCards" class="cards-inline muted">No computed scores yet.</div>
+              </article>
+              <article class="card">
+                <h3>Category Breakdown</h3>
+                <canvas id="alumniBarChart" width="420" height="220"></canvas>
+                <canvas id="alumniRadarChart" width="420" height="220"></canvas>
+              </article>
+            </div>
+          </section>
+
+          <section id="adminSection" class="panel">
+            <h2>Analytics</h2>
+            <p class="section-note">Course-level insights and category-based proficiency analytics with drill-down support.</p>
+            <div id="adminKpi" class="kpi-grid"></div>
+            <div class="grid two">
+              <article class="card">
+                <h3>Course Performance</h3>
+                <p class="muted">Click bars or chips to open detailed records.</p>
+                <canvas id="courseChart" width="420" height="240"></canvas>
+                <div id="courseList" class="click-list"></div>
+              </article>
+              <article class="card">
+                <h3>Category Distribution</h3>
+                <canvas id="categoryChart" width="420" height="240"></canvas>
+                <div id="categoryList" class="click-list"></div>
+              </article>
+            </div>
+            <article class="card">
+              <h3>Alumni Performance Index</h3>
+              <div id="rankingTableWrap" class="table-wrap skeleton"></div>
+            </article>
+          </section>
+
+          <section id="infoSection" class="panel">
+            <h2>Reports</h2>
+            <div class="grid two">
+              <article class="card">
+                <h3>Purpose and Importance</h3>
+                <ul>
+                  <li>Evaluate alumni competencies through structured assessment metrics.</li>
+                  <li>Identify development areas and high-proficiency clusters.</li>
+                  <li>Support evidence-based program and curriculum enhancement.</li>
+                  <li>Institution-identifying details are intentionally withheld pending formal defense.</li>
+                </ul>
+              </article>
+              <article class="card">
+                <h3>Process and Stack</h3>
+                <ol>
+                  <li>Alumni submit assessment responses.</li>
+                  <li>System computes category competency scores.</li>
+                  <li>Data is stored in Google Sheets via Apps Script.</li>
+                  <li>Dashboard visualizes trends and rankings.</li>
+                </ol>
+              </article>
+            </div>
+          </section>
+
+          <section id="settingsSection" class="panel">
+            <h2>Settings</h2>
+            <article class="card">
+              <h3>Profile Preferences</h3>
+              <form class="form">
+                <label>Display Name<input type="text" placeholder="Enter display name" /></label>
+                <label>Email Notifications
+                  <select>
+                    <option>Enabled</option>
+                    <option>Disabled</option>
+                  </select>
+                </label>
+                <label>Theme
+                  <select>
+                    <option>Minimal Light</option>
+                  </select>
+                </label>
+                <button class="primary ripple" type="button">Save Preferences</button>
+              </form>
+            </article>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <div id="drillDownPanel" class="drill-panel" aria-hidden="true">
+      <div class="drill-head">
+        <h3 id="drillTitle">Detail View</h3>
+        <button id="closeDrillBtn" class="ghost ripple">Close</button>
+      </div>
+      <div id="drillBody" class="drill-body"></div>
+    </div>
+
+    <script><?!= include("Client"); ?></script>
+  </body>
+</html>
+
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -31,7 +263,7 @@
           <a href="https://www.charlotteparent.com/the-importance-of-college-alumni-networks/" target="_blank" rel="noopener noreferrer">
             <img
               class="login-photo"
-              src="img1.webp"
+              src="img1.jpg"
               alt="Graduates holding caps and diplomas"
             />
           </a>
