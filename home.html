@@ -15,117 +15,268 @@
         <span class="logo-mark" aria-hidden="true"></span>
         <div>
           <strong>ALSKILL Platform</strong>
-          <p>Alumni dashboard</p>
+          <p>Alumni workspace</p>
         </div>
       </div>
     </header>
 
+    <div id="homeToast" class="home-toast" role="status" aria-live="polite"></div>
+
     <div id="appShell" class="app-shell">
-      <aside id="sidebar" class="sidebar">
-        <div class="brand">
-          <button id="sidebarToggleBtn" class="icon-btn ripple" type="button" title="Toggle sidebar">☰</button>
-          <div class="brand-text">
-            <h2>ALSKILL</h2>
-            <p>Your workspace</p>
+      <aside id="sidebar" class="sidebar" aria-label="Primary navigation">
+        <div class="sidebar-inner">
+          <div class="brand">
+            <button id="sidebarToggleBtn" class="icon-btn icon-btn--menu ripple" type="button" title="Collapse sidebar" aria-expanded="true" aria-controls="sidebar"></button>
+            <div class="brand-text">
+              <h2>ALSKILL</h2>
+              <p>Workspace</p>
+            </div>
           </div>
+          <nav class="side-nav" aria-label="Main sections">
+            <button type="button" class="nav-btn nav-btn--section nav-btn--ico ripple active" data-section="alumniSection" title="Dashboard">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 13h6V4H4v9zm0 7h6v-5H4v5zm8 0h6v-9h-6v9zm0-16v5h6V4h-6z" fill="currentColor" opacity=".88"/>
+                </svg>
+              </span>
+              <span class="nav-btn-core">
+                <span class="nav-btn-label">Dashboard</span>
+                <span class="nav-btn-meta">Your metrics</span>
+              </span>
+            </button>
+            <button type="button" class="nav-btn nav-btn--section nav-btn--ico ripple" data-section="skillTestSection" title="Test your skill">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z" fill="currentColor" opacity=".88"/>
+                </svg>
+              </span>
+              <span class="nav-btn-core">
+                <span class="nav-btn-label">Test your skill</span>
+                <span class="nav-btn-meta">Scenario assessment</span>
+              </span>
+            </button>
+            <button type="button" class="nav-btn nav-btn--section nav-btn--ico ripple" data-section="infoSection" title="Reports">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8v-2zm0-4h8v2H8v-2zm0-4h5v2H8V7z" fill="currentColor" opacity=".88"/>
+                </svg>
+              </span>
+              <span class="nav-btn-core">
+                <span class="nav-btn-label">Reports</span>
+                <span class="nav-btn-meta">Documentation</span>
+              </span>
+            </button>
+            <button type="button" class="nav-btn nav-btn--section nav-btn--ico ripple" data-section="settingsSection" title="Settings">
+              <span class="nav-ico" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="currentColor" opacity=".88"/>
+                </svg>
+              </span>
+              <span class="nav-btn-core">
+                <span class="nav-btn-label">Settings</span>
+                <span class="nav-btn-meta">Preferences</span>
+              </span>
+            </button>
+          </nav>
         </div>
-        <nav class="side-nav">
-          <button type="button" class="nav-btn ripple active" data-section="alumniSection"><span>▣</span><em>Dashboard</em></button>
-          <button type="button" class="nav-btn ripple" data-section="infoSection"><span>☰</span><em>Reports</em></button>
-          <button type="button" class="nav-btn ripple" data-section="settingsSection"><span>⚙</span><em>Settings</em></button>
-        </nav>
       </aside>
 
+      <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
       <section class="workspace">
-        <header class="topbar">
+        <header class="topbar topbar--home">
           <div class="top-search">
-            <input id="globalSearch" type="text" placeholder="Search course, alumni, or category..." />
+            <label class="visually-hidden" for="globalSearch">Search</label>
+            <input id="globalSearch" type="search" placeholder="Filter content (optional)" autocomplete="off" />
           </div>
           <div class="top-actions">
-            <span id="sessionLabel" class="muted"></span>
-            <button id="topLogoutBtn" class="ghost ripple" type="button">Logout</button>
+            <span id="sessionLabel" class="session-chip muted"></span>
+            <button id="topLogoutBtn" class="ghost ripple" type="button">Sign out</button>
           </div>
         </header>
 
-        <main class="container">
-          <section id="alumniSection" class="panel active">
-            <h2>Dashboard</h2>
-            <p class="section-note">Profile, questionnaire, and competency visuals.</p>
-            <div id="alumniKpi" class="kpi-grid"></div>
-            <div class="grid two">
-              <article class="card">
-                <h3>Profile Summary</h3>
-                <div id="profileCard" class="muted">Loading…</div>
-              </article>
-              <article class="card">
-                <h3>Skill Questionnaire</h3>
-                <div class="inline-controls">
-                  <label>Course
-                    <select id="questionCourseSelect">
-                      <option>BSIT</option>
-                      <option>BSBA - Marketing</option>
-                      <option>BSED</option>
-                      <option>BEED</option>
-                      <option>BECED</option>
-                    </select>
-                  </label>
-                  <button id="loadQuestionsBtn" class="ghost ripple" type="button">Load Questions</button>
-                </div>
-                <form id="questionnaireForm" class="form"></form>
-                <button id="submitResponsesBtn" class="primary ripple" type="button">Submit Responses</button>
-              </article>
+        <main class="container container--home">
+          <section id="alumniSection" class="panel active alumni-dashboard">
+            <header class="workspace-head">
+              <h2 class="workspace-title">Dashboard</h2>
+              <p class="workspace-lede" id="dashboardLede">
+                Your skill profile and progress-style snapshot. Open <strong>Test your skill</strong> when you are ready for your one official attempt.
+              </p>
+            </header>
+            <div id="alumniKpi" class="kpi-grid kpi-grid--dashboard"></div>
+          </section>
+
+          <section id="skillTestSection" class="panel alumni-workspace">
+            <header class="workspace-head">
+              <h2 class="workspace-title">Test your skill</h2>
+              <p class="workspace-lede" id="skillSectionLede">
+                Select your program, complete the scenario questionnaire, then review scores and recommendations.
+              </p>
+            </header>
+
+            <div id="assessmentLockBanner" class="assessment-lock-banner hidden" role="status" aria-live="polite">
+              <div class="assessment-lock-banner__inner">
+                <p class="assessment-lock-banner__title">Official attempt recorded</p>
+                <p class="assessment-lock-banner__text">
+                  Each alumni completes this benchmark once. Your score stays on your profile; revisit the same scenarios on your own to practice mastery offline.
+                </p>
+                <button type="button" class="primary ripple" id="lockedViewResultsBtn">View my results</button>
+              </div>
             </div>
-            <div class="grid two">
-              <article class="card">
-                <h3>Skill Score Cards</h3>
-                <div id="scoreCards" class="cards-inline muted">No computed scores yet.</div>
-              </article>
-              <article class="card">
-                <h3>Category Breakdown</h3>
-                <canvas id="alumniBarChart" width="420" height="220"></canvas>
-                <canvas id="alumniRadarChart" width="420" height="220"></canvas>
-              </article>
+
+            <nav class="stepper" aria-label="Assessment progress">
+              <ol class="stepper-list">
+                <li class="stepper-step is-active" data-wizard-step="1">
+                  <span class="stepper-num">1</span>
+                  <span class="stepper-label">Setup</span>
+                </li>
+                <li class="stepper-connector" aria-hidden="true"></li>
+                <li class="stepper-step" data-wizard-step="2">
+                  <span class="stepper-num">2</span>
+                  <span class="stepper-label">Assessment</span>
+                </li>
+                <li class="stepper-connector" aria-hidden="true"></li>
+                <li class="stepper-step" data-wizard-step="3">
+                  <span class="stepper-num">3</span>
+                  <span class="stepper-label">Results</span>
+                </li>
+              </ol>
+            </nav>
+
+            <div class="wizard-panels">
+              <section
+                class="wizard-panel wizard-panel--active"
+                id="skillWizardStep1"
+                data-step="1"
+                aria-labelledby="wiz-skill-1"
+              >
+                <div class="wizard-panel-inner">
+                  <h3 id="wiz-skill-1" class="wizard-step-title">Program setup</h3>
+                  <p class="wizard-step-desc">
+                    Select your program and major (if applicable), then load the 30-item scenario assessment.
+                  </p>
+                  <article class="card card--course">
+                    <div class="course-row course-row--stack">
+                      <label class="label-strong">Program
+                        <select id="assessmentProgramSelect" class="input-large" aria-describedby="courseStepHint"></select>
+                      </label>
+                      <div id="majorSelectWrap" class="major-wrap hidden">
+                        <label class="label-strong">Major
+                          <select id="assessmentMajorSelect" class="input-large" aria-describedby="courseStepHint"></select>
+                        </label>
+                      </div>
+                      <button id="loadQuestionsBtn" class="primary ripple" type="button">Load assessment</button>
+                    </div>
+                    <p id="courseStepHint" class="field-hint"></p>
+                  </article>
+                  <div class="step-actions step-actions--split">
+                    <button type="button" class="ghost ripple nav-go-dashboard">Back to dashboard</button>
+                    <button type="button" class="primary ripple wizard-next" data-next="2" id="wizardContinueFromCourse" disabled>
+                      Continue to assessment
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="wizard-panel" id="skillWizardStep2" data-step="2" hidden aria-labelledby="wiz-skill-2">
+                <div class="wizard-panel-inner">
+                  <h3 id="wiz-skill-2" class="wizard-step-title">Assessment</h3>
+                  <p class="wizard-step-desc">
+                    Each item describes a realistic situation. Choose A–D; scores map to a 1–4 rubric for analytics.
+                  </p>
+                  <article class="card card--form">
+                    <form id="questionnaireForm" class="form form--questionnaire"></form>
+                    <button id="submitResponsesBtn" class="primary ripple btn-submit-responses" type="button">Submit responses</button>
+                  </article>
+                  <div class="step-actions step-actions--split">
+                    <button type="button" class="ghost ripple wizard-back" data-prev="1">Back</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="wizard-panel" id="skillWizardStep3" data-step="3" hidden aria-labelledby="wiz-skill-3">
+                <div class="wizard-panel-inner">
+                  <h3 id="wiz-skill-3" class="wizard-step-title">Results</h3>
+                  <p class="wizard-step-desc">
+                    Category means (1–4 scale), overall mean, charts, and projected program or major fit based on your profile.
+                  </p>
+                  <article class="card card--recommend" id="recommendationCard">
+                    <h4 class="card-heading">Recommendations</h4>
+                    <div id="recommendationBody" class="recommendation-body muted">
+                      Submit your assessment to see best-fit program and major suggestions.
+                    </div>
+                  </article>
+                  <div class="results-grid">
+                    <article class="card card--scores">
+                      <h4 class="card-heading">Scores by category</h4>
+                      <div id="scoreCards" class="cards-inline cards-inline--stack muted">No scores yet. Complete the assessment first.</div>
+                    </article>
+                    <article class="card card--charts">
+                      <h4 class="card-heading">Distribution</h4>
+                      <div class="chart-row">
+                        <canvas id="alumniBarChart" width="420" height="220"></canvas>
+                        <canvas id="alumniRadarChart" width="420" height="220"></canvas>
+                      </div>
+                    </article>
+                  </div>
+                  <div class="step-actions step-actions--split">
+                    <button type="button" class="ghost ripple wizard-back" data-prev="2">Back</button>
+                    <button type="button" class="primary ripple wizard-jump-dashboard">Return to dashboard</button>
+                  </div>
+                </div>
+              </section>
             </div>
           </section>
 
-          <section id="infoSection" class="panel">
-            <h2>Reports</h2>
+          <section id="infoSection" class="panel panel--plain">
+            <header class="workspace-head workspace-head--minor">
+              <h2 class="workspace-title">Reports</h2>
+              <p class="workspace-lede">Purpose and workflow context for this assessment.</p>
+            </header>
             <div class="grid two">
-              <article class="card">
-                <h3>Purpose and Importance</h3>
-                <ul>
-                  <li>Evaluate alumni competencies through structured assessment metrics.</li>
-                  <li>Identify development areas and high-proficiency clusters.</li>
-                  <li>Support evidence-based program and curriculum enhancement.</li>
+              <article class="card card--mutedLift">
+                <h3 class="card-heading">Purpose</h3>
+                <ul class="list-prose">
+                  <li>Structured competency signals across categories.</li>
+                  <li>Highlight strengths and areas for development.</li>
+                  <li>Support program-level evidence.</li>
                 </ul>
               </article>
-              <article class="card">
-                <h3>Process and Stack</h3>
-                <ol>
-                  <li>Alumni submit assessment responses.</li>
-                  <li>System computes category competency scores.</li>
-                  <li>Data is stored in Google Sheets via Apps Script.</li>
-                  <li>Dashboard visualizes trends and rankings.</li>
+              <article class="card card--mutedLift">
+                <h3 class="card-heading">Flow</h3>
+                <ol class="list-prose list-prose--numbered">
+                  <li>Use <strong>Test your skill</strong> to complete the scenario questionnaire.</li>
+                  <li>Scores aggregate by skill category.</li>
+                  <li>Results persist via your institutional backend when connected.</li>
                 </ol>
               </article>
             </div>
           </section>
 
-          <section id="settingsSection" class="panel">
-            <h2>Settings</h2>
-            <article class="card">
-              <h3>Profile Preferences</h3>
-              <form class="form">
-                <label>Display Name<input type="text" placeholder="Enter display name" /></label>
-                <label>Email Notifications
-                  <select>
-                    <option>Enabled</option>
-                    <option>Disabled</option>
-                  </select>
-                </label>
-                <button class="primary ripple" type="button">Save Preferences</button>
-              </form>
-            </article>
+          <section id="settingsSection" class="panel panel--plain">
+            <header class="workspace-head workspace-head--minor">
+              <h2 class="workspace-title">Settings</h2>
+              <p class="workspace-lede">Profile and optional preferences.</p>
+            </header>
+            <div class="grid two">
+              <article class="card card--profile">
+                <h3 class="card-heading">Profile</h3>
+                <div id="profileCard" class="profile-block muted">Loading profile.</div>
+              </article>
+              <article class="card card--settings">
+                <h3 class="card-heading">Notifications</h3>
+                <form class="form form--narrow">
+                  <label>Display name<input type="text" placeholder="Name shown in summaries" autocomplete="name" /></label>
+                  <label>Email notifications
+                    <select>
+                      <option>Enabled</option>
+                      <option>Disabled</option>
+                    </select>
+                  </label>
+                  <button class="primary ripple" type="button">Save</button>
+                </form>
+              </article>
+            </div>
           </section>
         </main>
       </section>
@@ -133,12 +284,13 @@
 
     <div id="drillDownPanel" class="drill-panel" aria-hidden="true">
       <div class="drill-head">
-        <h3 id="drillTitle">Detail View</h3>
+        <h3 id="drillTitle">Detail</h3>
         <button id="closeDrillBtn" class="ghost ripple" type="button">Close</button>
       </div>
       <div id="drillBody" class="drill-body"></div>
     </div>
 
+    <script src="assessment-catalog.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

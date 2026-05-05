@@ -64,17 +64,19 @@
               <label>Full Name<input type="text" name="name" required /></label>
               <label>Institutional Email<input type="email" name="email" required /></label>
               <label>Password<input type="password" name="password" required /></label>
-              <label>Course
-                <select name="course" required>
-                  <option value="">Select course</option>
-                  <option>BSIT</option>
-                  <option>BSBA - Marketing</option>
-                  <option>BSED</option>
-                  <option>BEED</option>
-                  <option>BECED</option>
+              <label>Program
+                <select name="course" id="registerCourseSelect" required>
+                  <option value="">Select program</option>
+                  <option value="BSCT">Bachelor of Science in Computer Technology</option>
+                  <option value="BSBA">Bachelor of Science in Business Administration</option>
+                  <option value="BSED">Bachelor of Science in Secondary Education</option>
+                  <option value="BECED">Bachelor of Science in Early Childhood Education</option>
+                  <option value="BEED">Bachelor of Science in Elementary Education</option>
                 </select>
               </label>
-              <label>Major<input type="text" name="major" placeholder="Optional" /></label>
+              <label for="registerMajorSelect">Major</label>
+              <select name="major" id="registerMajorSelect" aria-describedby="registerMajorHelp"></select>
+              <p id="registerMajorHelp" class="field-hint register-major-hint"></p>
               <label>Batch<input type="number" name="batch" min="1990" max="2100" required /></label>
               <button type="submit" class="primary ripple">Create Account</button>
             </form>

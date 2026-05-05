@@ -270,7 +270,7 @@ function initializeDatabase() {
   var structures = [
     { name: SHEET_NAMES.USERS, headers: ["user_id", "name", "email", "password", "course", "major", "batch", "role"] },
     { name: SHEET_NAMES.QUESTIONS, headers: ["id", "course", "category", "question", "type"] },
-    { name: SHEET_NAMES.RESPONSES, headers: ["id", "user_id", "question_id", "answer", "score"] },
+    { name: SHEET_NAMES.RESPONSES, headers: ["id", "user_id", "question_id", "answer", "score", "category"] },
     { name: SHEET_NAMES.RESULTS, headers: ["id", "user_id", "category", "score", "date"] }
   ];
 
@@ -280,6 +280,23 @@ function initializeDatabase() {
       sheet.getRange(1, 1, 1, item.headers.length).setValues([item.headers]);
     }
   });
+
+  var responseSheet0 = ss.getSheetByName(SHEET_NAMES.RESPONSES);
+  if (responseSheet0) {
+    var lastCol = responseSheet0.getLastColumn();
+    if (lastCol < 6) {
+      responseSheet0.getRange(1, 6).setValue("category");
+    } else {
+      var headerRow = responseSheet0.getRange(1, 1, 1, lastCol).getValues()[0];
+      var hasCategoryHeader = false;
+      for (var hi = 0; hi < headerRow.length; hi++) {
+        if (String(headerRow[hi]).toLowerCase() === "category") hasCategoryHeader = true;
+      }
+      if (!hasCategoryHeader) {
+        responseSheet0.getRange(1, 6).setValue("category");
+      }
+    }
+  }
 
   var usersSheet = ss.getSheetByName(SHEET_NAMES.USERS);
   if (usersSheet.getLastRow() === 1) {
@@ -458,12 +475,14 @@ function submitResponses(userId, responses) {
   }
   var sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.RESPONSES);
   var rows = responses.map(function(item) {
+    var cat = item.category != null ? String(item.category) : "";
     return [
       "R" + Utilities.getUuid().slice(0, 8),
       userId,
       item.question_id,
       item.answer,
-      Number(item.score)
+      Number(item.score),
+      cat
     ];
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
@@ -504,7 +523,14 @@ function computeSkillScores(userId) {
   var grouped = {};
   for (var r = 1; r < responses.length; r++) {
     if (String(responses[r][1]) !== String(userId)) continue;
-    var category = questionMap[responses[r][2]];
+    var qid = responses[r][2];
+    var fromRow = responses[r].length > 5 ? responses[r][5] : "";
+    var category =
+      fromRow !== undefined &&
+      fromRow !== null &&
+      String(fromRow).trim() !== ""
+        ? String(fromRow).trim()
+        : questionMap[qid];
     if (!category) continue;
     if (!grouped[category]) grouped[category] = [];
     grouped[category].push(Number(responses[r][4]));

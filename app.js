@@ -63,34 +63,175 @@ const state = {
   responses: [],
   results: [],
   lastComputedScores: {},
+  lastComputedOverall: null,
+  currentTrackKey: null,
+  lastRecommendation: null,
   charts: {}
 };
 
+/** Session flag plus stored responses/results imply one official 30-question attempt completed. */
+const OFFICIAL_ATTEMPT_STORAGE_PREFIX = "alskill_official_attempt_v1_";
+const LAST_ASSESSMENT_TRACK_PREFIX = "alskill_last_assessment_track_v1_";
+
+function hasOfficialAttemptDone(uid) {
+  if (!uid) return false;
+  try {
+    if (window.sessionStorage.getItem(OFFICIAL_ATTEMPT_STORAGE_PREFIX + uid)) return true;
+  } catch (e) {
+    /* ignore */
+  }
+  const responsesCount = state.responses.filter((r) => r.user_id === uid).length;
+  if (responsesCount >= 30) return true;
+  const categories = new Set(state.results.filter((r) => r.user_id === uid).map((r) => r.category));
+  return categories.size >= 6;
+}
+
+function markOfficialAttemptDone(uid) {
+  if (!uid) return;
+  try {
+    window.sessionStorage.setItem(OFFICIAL_ATTEMPT_STORAGE_PREFIX + uid, String(Date.now()));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function hydrateScoresFromStoredResults(uid) {
+  const mine = state.results.filter((r) => r.user_id === uid);
+  if (mine.length === 0) return;
+  const grouped = {};
+  mine.forEach((row) => {
+    const k = row.category;
+    if (!grouped[k]) grouped[k] = [];
+    grouped[k].push(Number(row.score));
+  });
+  const scoreMap = {};
+  Object.keys(grouped).forEach((cat) => {
+    const arr = grouped[cat];
+    scoreMap[cat] = Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2));
+  });
+  if (Object.keys(scoreMap).length === 0) return;
+  state.lastComputedScores = scoreMap;
+  const vals = Object.values(scoreMap);
+  state.lastComputedOverall = Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2));
+}
+
+function getRankTier(overallNum) {
+  if (overallNum == null || Number.isNaN(overallNum)) {
+    return { key: "scout", label: "Scout", blurb: "Complete your official run to earn a rank.", cls: "game-rank--scout" };
+  }
+  const o = Number(overallNum);
+  if (o < 2) return { key: "novice", label: "Novice", blurb: "Foundation skills — keep building.", cls: "game-rank--novice" };
+  if (o < 2.5) return { key: "learner", label: "Learner", blurb: "Solid baseline across scenarios.", cls: "game-rank--learner" };
+  if (o < 3) return { key: "specialist", label: "Specialist", blurb: "Consistent judgement under pressure.", cls: "game-rank--specialist" };
+  if (o < 3.5) return { key: "adept", label: "Adept", blurb: "Strong readiness signals.", cls: "game-rank--adept" };
+  if (o < 3.85) return { key: "expert", label: "Expert", blurb: "High proficiency benchmark.", cls: "game-rank--expert" };
+  return { key: "master", label: "Masterclass", blurb: "Top-band performance across categories.", cls: "game-rank--master" };
+}
+
+function applyAssessmentLockUI() {
+  if (PAGE !== "home" || !state.currentUser) return;
+  const uid = state.currentUser.user_id;
+  const locked = hasOfficialAttemptDone(uid);
+  const sec = document.getElementById("skillTestSection");
+  const banner = document.getElementById("assessmentLockBanner");
+
+  if (sec) sec.classList.toggle("is-assessment-locked", locked);
+  if (banner) banner.classList.toggle("hidden", !locked);
+
+  const loadBtn = document.getElementById("loadQuestionsBtn");
+  const submitBtn = document.getElementById("submitResponsesBtn");
+  const continueBtn = document.getElementById("wizardContinueFromCourse");
+  const prog = document.getElementById("assessmentProgramSelect");
+  const maj = document.getElementById("assessmentMajorSelect");
+
+  [loadBtn, submitBtn, continueBtn].forEach((el) => {
+    if (el) el.disabled = !!locked;
+  });
+  [prog, maj].forEach((el) => {
+    if (el) el.disabled = !!locked;
+  });
+
+  const skillLede = document.getElementById("skillSectionLede");
+  if (skillLede) {
+    skillLede.textContent = locked
+      ? "Your official run is locked in. Review results below, or practice the same scenarios independently to sharpen judgement."
+      : "Select your program, complete the questionnaire, then review scores. You have one official submission for your profile benchmark.";
+  }
+
+  const dashLede = document.getElementById("dashboardLede");
+  if (dashLede) {
+    dashLede.textContent = locked
+      ? "Your rank and mastery track your official assessment. Retakes are disabled so cohort scores stay comparable."
+      : "Your skill rank and mastery meter update after your one official attempt in Test your skill.";
+  }
+
+  const navSkillMeta = document.querySelector('.nav-btn[data-section="skillTestSection"] .nav-btn-meta');
+  if (navSkillMeta) navSkillMeta.textContent = locked ? "Results saved" : "One official attempt";
+}
+
+function bindAssessmentLockActions() {
+  const btn = document.getElementById("lockedViewResultsBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const uid = state.currentUser && state.currentUser.user_id;
+    if (!uid) return;
+    hydrateScoresFromStoredResults(uid);
+    const scores = state.lastComputedScores;
+    if (!scores || Object.keys(scores).length === 0) {
+      showHomeToast("No scored results found yet.", "error");
+      return;
+    }
+    let track = state.currentTrackKey;
+    try {
+      const stored = window.sessionStorage.getItem(LAST_ASSESSMENT_TRACK_PREFIX + uid);
+      if (stored) track = stored;
+    } catch (e) {
+      /* ignore */
+    }
+    if (track) state.currentTrackKey = track;
+    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
+    const skillNav = document.querySelector('.nav-btn[data-section="skillTestSection"]');
+    if (skillNav) skillNav.classList.add("active");
+    showSection("skillTestSection");
+    setHomeWizardStep(3);
+    renderScoreCards(scores);
+    drawAlumniCharts(scores);
+    if (typeof alsRecommend === "function" && track) {
+      applyRecommendationFromScores(scores, track);
+    }
+    closeMobileSidebar();
+  });
+}
+
+function openSkillResultsIfLocked() {
+  if (!state.currentUser || !hasOfficialAttemptDone(state.currentUser.user_id)) return;
+  const uid = state.currentUser.user_id;
+  hydrateScoresFromStoredResults(uid);
+  if (!state.lastComputedScores || Object.keys(state.lastComputedScores).length === 0) return;
+  try {
+    const t = window.sessionStorage.getItem(LAST_ASSESSMENT_TRACK_PREFIX + uid);
+    if (t) state.currentTrackKey = t;
+  } catch (e) {
+    /* ignore */
+  }
+  setHomeWizardStep(3);
+  renderScoreCards(state.lastComputedScores);
+  drawAlumniCharts(state.lastComputedScores);
+  if (typeof alsRecommend === "function" && state.currentTrackKey) {
+    applyRecommendationFromScores(state.lastComputedScores, state.currentTrackKey);
+  }
+}
+
 const DEMO_DB = {
   users: [
-    { user_id: "A001", name: "Liam Ortega", email: "liam@nbsc.edu", password: "alumni123", course: "BSIT", major: "Software", batch: 2023, role: "Alumni" },
-    { user_id: "A002", name: "Ava Medina", email: "ava@nbsc.edu", password: "alumni123", course: "BSBA - Marketing", major: "Marketing", batch: 2022, role: "Alumni" },
-    { user_id: "A003", name: "Noah Villanueva", email: "noah@nbsc.edu", password: "alumni123", course: "BSED", major: "English", batch: 2021, role: "Alumni" },
-    { user_id: "A004", name: "Mia Navarro", email: "mia@nbsc.edu", password: "alumni123", course: "BEED", major: "General Education", batch: 2020, role: "Alumni" },
-    { user_id: "A005", name: "Ethan Cruz", email: "ethan@nbsc.edu", password: "alumni123", course: "BECED", major: "Early Childhood", batch: 2023, role: "Alumni" },
+    { user_id: "A001", name: "Liam Ortega", email: "liam@nbsc.edu", password: "alumni123", course: "BSCT", major: "-", batch: 2023, role: "Alumni" },
+    { user_id: "A002", name: "Ava Medina", email: "ava@nbsc.edu", password: "alumni123", course: "BSBA", major: "MM", batch: 2022, role: "Alumni" },
+    { user_id: "A003", name: "Noah Villanueva", email: "noah@nbsc.edu", password: "alumni123", course: "BSED", major: "EN", batch: 2021, role: "Alumni" },
+    { user_id: "A004", name: "Mia Navarro", email: "mia@nbsc.edu", password: "alumni123", course: "BEED", major: "-", batch: 2020, role: "Alumni" },
+    { user_id: "A005", name: "Ethan Cruz", email: "ethan@nbsc.edu", password: "alumni123", course: "BECED", major: "-", batch: 2023, role: "Alumni" },
     { user_id: "ADM1", name: "System Administrator", email: "admin@alskill.local", password: "admin123", course: "-", major: "-", batch: 0, role: "Admin" }
   ],
-  questions: [
-    { id: "Q1", course: "BSIT", category: "Technical Skills", question: "Rate your programming proficiency (1-5).", type: "scale" },
-    { id: "Q2", course: "BSIT", category: "Professional Skills", question: "Rate your experience in system development (1-5).", type: "scale" },
-    { id: "Q3", course: "BSIT", category: "Technical Skills", question: "Rate your knowledge in database management (1-5).", type: "scale" },
-    { id: "Q4", course: "BSBA - Marketing", category: "Professional Skills", question: "Rate your ability to design marketing strategies (1-5).", type: "scale" },
-    { id: "Q5", course: "BSBA - Marketing", category: "Technical Skills", question: "Rate your digital campaign management skills (1-5).", type: "scale" },
-    { id: "Q6", course: "BSED", category: "Professional Skills", question: "Rate your lesson planning effectiveness (1-5).", type: "scale" },
-    { id: "Q7", course: "BSED", category: "Soft Skills", question: "Rate your classroom management competency (1-5).", type: "scale" },
-    { id: "Q8", course: "BSED", category: "Soft Skills", question: "Rate your communication clarity (1-5).", type: "scale" },
-    { id: "Q9", course: "BEED", category: "Professional Skills", question: "Rate your lesson planning effectiveness (1-5).", type: "scale" },
-    { id: "Q10", course: "BEED", category: "Soft Skills", question: "Rate your classroom management competency (1-5).", type: "scale" },
-    { id: "Q11", course: "BEED", category: "Soft Skills", question: "Rate your communication clarity (1-5).", type: "scale" },
-    { id: "Q12", course: "BECED", category: "Professional Skills", question: "Rate your lesson planning effectiveness (1-5).", type: "scale" },
-    { id: "Q13", course: "BECED", category: "Soft Skills", question: "Rate your classroom management competency (1-5).", type: "scale" },
-    { id: "Q14", course: "BECED", category: "Soft Skills", question: "Rate your communication clarity (1-5).", type: "scale" }
-  ],
+  questions: [],
   responses: [],
   results: [
     { id: "RES01", user_id: "A001", category: "Technical Skills", score: 4.6, date: "2026-05-01T09:00:00.000Z" },
@@ -202,6 +343,7 @@ function initAuthPage() {
   state.results = [...DEMO_DB.results];
   warmupRemote();
   bindAuthForms();
+  bindRegisterMajorField();
   bindShellInteractions();
   setAuthMode("login");
 }
@@ -219,14 +361,20 @@ async function initHomePage() {
   warmupRemote();
   bindNavigation();
   bindAlumniActions();
+  bindHomeWizard();
   bindAdminActions();
   bindShellInteractions();
   bindLogout();
-  await hydrateQuestions();
+  populateAssessmentPrograms();
+  hydrateScoresFromStoredResults(state.currentUser.user_id);
   renderProfile();
   renderAlumniKpis();
+  syncAssessmentSelectorsFromProfile();
+  bindAssessmentLockActions();
+  applyAssessmentLockUI();
   showSection("alumniSection");
   setActiveNav("alumniSection");
+  bindSkillSectionChrome();
   updateSessionUI();
 }
 
@@ -272,16 +420,18 @@ async function warmupRemote() {
   }
 }
 
+/**
+ * Optional sync of legacy Questions sheet rows (does not overwrite client catalog questions).
+ */
 async function hydrateQuestions() {
   if (!USE_REMOTE_API) return;
-  const courses = ["BSIT", "BSBA - Marketing", "BSED", "BEED", "BECED"];
+  const courses = ["BSCT", "BSBA", "BSED", "BEED", "BECED"];
   const all = [];
   for (const course of courses) {
     const res = await apiGet("fetchQuestions", { course });
     if (res && res.success && Array.isArray(res.questions)) all.push(...res.questions);
   }
-  const uniq = new Map(all.map((q) => [q.id, q]));
-  state.questions = [...uniq.values()];
+  state.sheetQuestionsFallback = all;
 }
 
 function bindNavigation() {
@@ -294,6 +444,34 @@ function bindNavigation() {
       document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       showSection(btn.dataset.section);
+      if (PAGE === "home" && btn.dataset.section === "skillTestSection") {
+        if (state.currentUser && hasOfficialAttemptDone(state.currentUser.user_id)) {
+          openSkillResultsIfLocked();
+        } else {
+          setHomeWizardStep(1);
+        }
+      }
+      closeMobileSidebar();
+    });
+  });
+}
+
+function closeMobileSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  const backdrop = document.getElementById("sidebarBackdrop");
+  if (sidebar) sidebar.classList.remove("open");
+  if (backdrop) backdrop.classList.remove("is-visible");
+}
+
+function bindSkillSectionChrome() {
+  if (PAGE !== "home") return;
+  document.querySelectorAll(".nav-go-dashboard, .wizard-jump-dashboard").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
+      const dash = document.querySelector('.nav-btn[data-section="alumniSection"]');
+      if (dash) dash.classList.add("active");
+      showSection("alumniSection");
+      closeMobileSidebar();
     });
   });
 }
@@ -320,10 +498,31 @@ function showSection(sectionId) {
 function bindShellInteractions() {
   const toggleBtn = document.getElementById("sidebarToggleBtn");
   const sidebar = document.getElementById("sidebar");
-  if (toggleBtn && sidebar) {
+  const appShell = document.getElementById("appShell");
+  const backdrop = document.getElementById("sidebarBackdrop");
+
+  if (toggleBtn && sidebar && appShell) {
     toggleBtn.addEventListener("click", () => {
-      if (window.innerWidth <= 980) sidebar.classList.toggle("open");
-      else sidebar.classList.toggle("collapsed");
+      if (window.innerWidth <= 980) {
+        sidebar.classList.toggle("open");
+        const open = sidebar.classList.contains("open");
+        if (backdrop) backdrop.classList.toggle("is-visible", open);
+        toggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      } else {
+        appShell.classList.toggle("sidebar-collapsed");
+        const collapsed = appShell.classList.contains("sidebar-collapsed");
+        sidebar.classList.toggle("collapsed", collapsed);
+        toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        toggleBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+      }
+    });
+  }
+
+  if (backdrop && sidebar) {
+    backdrop.addEventListener("click", () => {
+      sidebar.classList.remove("open");
+      backdrop.classList.remove("is-visible");
+      if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
     });
   }
   document.querySelectorAll(".ripple").forEach((button) => {
@@ -335,6 +534,12 @@ function bindShellInteractions() {
       button.appendChild(ripple);
       setTimeout(() => ripple.remove(), 500);
     });
+  });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 980) {
+      closeMobileSidebar();
+    }
   });
 }
 
@@ -353,6 +558,67 @@ async function refreshAdminAnalytics() {
     const wrap = document.getElementById("rankingTableWrap");
     if (wrap) wrap.classList.remove("skeleton");
   }
+}
+
+function syncRegisterMajorField() {
+  const courseSel = document.getElementById("registerCourseSelect");
+  const majorSel = document.getElementById("registerMajorSelect");
+  const hint = document.getElementById("registerMajorHelp");
+  if (!majorSel) return;
+
+  const course = courseSel ? courseSel.value : "";
+
+  majorSel.innerHTML = "";
+
+  if (course === "BSBA") {
+    [
+      ["", "Select major"],
+      ["MM", "Marketing Management"],
+      ["OM", "Operational Management"],
+      ["FM", "Financial Management"]
+    ].forEach(([value, label]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      majorSel.appendChild(opt);
+    });
+    majorSel.required = true;
+    if (hint) hint.textContent = "Required: choose your BSBA emphasis track.";
+  } else if (course === "BSED") {
+    [
+      ["", "Select major"],
+      ["EN", "English"],
+      ["MA", "Math"]
+    ].forEach(([value, label]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      majorSel.appendChild(opt);
+    });
+    majorSel.required = true;
+    if (hint) hint.textContent = "Required: choose your secondary education specialization.";
+  } else if (course) {
+    const opt = document.createElement("option");
+    opt.value = "-";
+    opt.textContent = "Not applicable";
+    majorSel.appendChild(opt);
+    majorSel.required = false;
+    majorSel.value = "-";
+    if (hint) hint.textContent = "This program does not use a major selection.";
+  } else {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Select a program first";
+    majorSel.appendChild(opt);
+    majorSel.required = false;
+    if (hint) hint.textContent = "";
+  }
+}
+
+function bindRegisterMajorField() {
+  const courseSel = document.getElementById("registerCourseSelect");
+  if (!courseSel) return;
+  courseSel.addEventListener("change", syncRegisterMajorField);
 }
 
 function bindAuthForms() {
@@ -383,6 +649,25 @@ function bindAuthForms() {
       registerStatus.textContent = "Please enter a valid batch year.";
       return;
     }
+
+    const courseVal = String(formData.course || "").trim();
+    const majorRaw = String(formData.major != null ? formData.major : "").trim();
+
+    if (courseVal === "BSBA") {
+      if (!majorRaw || !["MM", "OM", "FM"].includes(majorRaw)) {
+        registerStatus.textContent = "Please select your major for Bachelor of Science in Business Administration.";
+        return;
+      }
+    } else if (courseVal === "BSED") {
+      if (!majorRaw || !["EN", "MA"].includes(majorRaw)) {
+        registerStatus.textContent = "Please select your major for Bachelor of Science in Secondary Education.";
+        return;
+      }
+    }
+
+    const majorOut =
+      courseVal === "BSBA" || courseVal === "BSED" ? majorRaw : majorRaw === "" ? "-" : majorRaw;
+
     (async () => {
       try {
         if (USE_REMOTE_API) {
@@ -391,7 +676,7 @@ function bindAuthForms() {
             email,
             password: formData.password,
             course: formData.course,
-            major: formData.major || "-",
+            major: majorOut,
             batch: batchNum
           });
           if (!res || !res.success) {
@@ -401,6 +686,7 @@ function bindAuthForms() {
           registerStatus.textContent = "Registration successful. You may now log in.";
           loginStatus.textContent = "";
           registerForm.reset();
+          syncRegisterMajorField();
           setAuthMode("login");
           if (document.getElementById("adminKpi")) await refreshAdminAnalytics();
           return;
@@ -412,7 +698,7 @@ function bindAuthForms() {
           email,
           password: formData.password,
           course: formData.course,
-          major: formData.major || "-",
+          major: majorOut,
           batch: batchNum,
           role: "Alumni"
         };
@@ -424,6 +710,7 @@ function bindAuthForms() {
         registerStatus.textContent = "Registration successful. You may now log in.";
         loginStatus.textContent = "";
         registerForm.reset();
+        syncRegisterMajorField();
         if (document.getElementById("adminKpi")) renderAdminDashboard();
         if (document.getElementById("alumniKpi")) renderAlumniKpis();
         setAuthMode("login");
@@ -499,6 +786,7 @@ function setAuthMode(mode) {
     showLoginBtn.classList.add("ghost");
     showRegisterBtn.classList.remove("ghost");
     showRegisterBtn.classList.add("primary");
+    syncRegisterMajorField();
     return;
   }
   registerPanel.classList.add("hidden");
@@ -516,6 +804,7 @@ function canAccessSection(sectionId) {
   if (sectionId === "settingsSection") return true;
   if (sectionId === "infoSection") return true;
   if (sectionId === "alumniSection") return role === "Alumni" && !!document.getElementById("alumniSection");
+  if (sectionId === "skillTestSection") return role === "Alumni" && !!document.getElementById("skillTestSection");
   if (sectionId === "adminSection") return role === "Admin" && !!document.getElementById("adminSection");
   return false;
 }
@@ -524,6 +813,193 @@ function setActiveNav(sectionId) {
   document.querySelectorAll(".nav-btn").forEach((button) => {
     button.classList.toggle("active", button.dataset.section === sectionId);
   });
+}
+
+function showHomeToast(message, variant = "info") {
+  const el = document.getElementById("homeToast");
+  if (!el) {
+    window.alert(message);
+    return;
+  }
+  el.textContent = message;
+  el.classList.remove("home-toast--error", "home-toast--success");
+  if (variant === "error") el.classList.add("home-toast--error");
+  else if (variant === "success") el.classList.add("home-toast--success");
+  el.classList.add("is-visible");
+  clearTimeout(showHomeToast._t);
+  showHomeToast._t = setTimeout(() => el.classList.remove("is-visible"), 5200);
+}
+
+function setHomeWizardStep(step) {
+  if (PAGE !== "home") return;
+  const root = document.getElementById("skillTestSection");
+  if (!root) return;
+  const max = 3;
+  const n = Math.min(Math.max(Number(step) || 1, 1), max);
+  root.querySelectorAll(".wizard-panel").forEach((panel) => {
+    const ps = Number(panel.dataset.step);
+    const active = ps === n;
+    panel.classList.toggle("wizard-panel--active", active);
+    panel.hidden = !active;
+  });
+  root.querySelectorAll(".stepper-step").forEach((item) => {
+    const s = Number(item.dataset.wizardStep);
+    item.classList.toggle("is-active", s === n);
+    item.classList.toggle("is-done", s < n);
+  });
+}
+
+function bindHomeWizard() {
+  if (PAGE !== "home") return;
+  document.querySelectorAll(".wizard-next").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.next;
+      if (next) setHomeWizardStep(next);
+    });
+  });
+  document.querySelectorAll(".wizard-back").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const prev = btn.dataset.prev;
+      if (prev) setHomeWizardStep(prev);
+    });
+  });
+  document.querySelectorAll(".wizard-jump").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const jump = btn.dataset.jump;
+      if (jump) setHomeWizardStep(jump);
+    });
+  });
+  const continueCourse = document.getElementById("wizardContinueFromCourse");
+  if (continueCourse) {
+    continueCourse.addEventListener("click", () => {
+      if (continueCourse.disabled) return;
+      setHomeWizardStep(2);
+    });
+  }
+}
+
+function escapeHtml(text) {
+  const d = document.createElement("div");
+  d.textContent = text == null ? "" : String(text);
+  return d.innerHTML;
+}
+
+function normalizeLegacyCourseId(courseRaw) {
+  const s = String(courseRaw || "").trim();
+  const map = {
+    BSIT: "BSCT",
+    "BSBA - Marketing": "BSBA",
+    "BS Computer Technology": "BSCT",
+    "Bachelor of Science in Computer Technology": "BSCT"
+  };
+  return map[s] || s;
+}
+
+function populateAssessmentPrograms() {
+  const sel = document.getElementById("assessmentProgramSelect");
+  if (!sel || typeof ALSKILL_COURSE_CATALOG === "undefined") return;
+  sel.innerHTML = ALSKILL_COURSE_CATALOG.map(
+    (c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`
+  ).join("");
+  bindAssessmentCascade();
+}
+
+function bindAssessmentCascade() {
+  const prog = document.getElementById("assessmentProgramSelect");
+  const majorWrap = document.getElementById("majorSelectWrap");
+  const majorSel = document.getElementById("assessmentMajorSelect");
+  if (!prog || !majorWrap || !majorSel || typeof ALSKILL_COURSE_CATALOG === "undefined") return;
+
+  const refreshMajors = () => {
+    const entry = ALSKILL_COURSE_CATALOG.find((c) => c.id === prog.value);
+    majorSel.innerHTML = "";
+    if (!entry || !entry.majors || entry.majors.length === 0) {
+      majorWrap.classList.add("hidden");
+      majorSel.removeAttribute("required");
+      return;
+    }
+    majorWrap.classList.remove("hidden");
+    majorSel.required = true;
+    entry.majors.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name;
+      majorSel.appendChild(opt);
+    });
+  };
+
+  prog.addEventListener("change", refreshMajors);
+  refreshMajors();
+}
+
+function getAssessmentTrackKey() {
+  const prog = document.getElementById("assessmentProgramSelect");
+  const majorWrap = document.getElementById("majorSelectWrap");
+  const majorSel = document.getElementById("assessmentMajorSelect");
+  if (!prog) return "";
+  const pid = prog.value;
+  if (!majorWrap || majorWrap.classList.contains("hidden") || !majorSel) return pid;
+  const mid = majorSel.value;
+  return mid ? `${pid}:${mid}` : pid;
+}
+
+function syncAssessmentSelectorsFromProfile() {
+  const prog = document.getElementById("assessmentProgramSelect");
+  const major = document.getElementById("assessmentMajorSelect");
+  const wrap = document.getElementById("majorSelectWrap");
+  if (!prog || !state.currentUser) return;
+  const cid = normalizeLegacyCourseId(state.currentUser.course);
+  const opt = [...prog.options].find((o) => o.value === cid);
+  if (opt) {
+    prog.value = cid;
+    prog.dispatchEvent(new Event("change"));
+  }
+  if (major && wrap && !wrap.classList.contains("hidden")) {
+    const maj = String(state.currentUser.major || "").trim();
+    if (!maj || maj === "-") return;
+    const byVal = [...major.options].find((o) => o.value.toLowerCase() === maj.toLowerCase());
+    const byText = [...major.options].find((o) =>
+      maj.length >= 2 ? o.textContent.toLowerCase().includes(maj.toLowerCase()) : false
+    );
+    const pick = byVal || byText;
+    if (pick) major.value = pick.value;
+  }
+}
+
+function applyRecommendationFromScores(scoreMap, trackKey) {
+  if (typeof alsRecommend !== "function") return;
+  const tk = trackKey || state.currentTrackKey || "BSCT";
+  state.lastRecommendation = alsRecommend(scoreMap, tk);
+  renderRecommendations(state.lastRecommendation);
+}
+
+function renderRecommendations(rec) {
+  const el = document.getElementById("recommendationBody");
+  if (!el || !rec) return;
+  const progs = rec.rankedPrograms || [];
+  const majors = rec.rankedMajors || [];
+  const topP = rec.topProgram;
+  const topM = rec.topMajorTrack;
+  el.classList.remove("muted");
+  el.innerHTML = `
+    <p><strong>Top program match:</strong> ${escapeHtml(topP.programName)} (fit index ${topP.fit})</p>
+    <p><strong>Top major track match:</strong> ${escapeHtml(topM.trackKey)} (fit index ${topM.fit})</p>
+    <p class="recommendation-meta">${escapeHtml(rec.narrative)}</p>
+    <p><strong>Ranked programs</strong></p>
+    <ol class="rank-list">
+      ${progs
+        .slice(0, 5)
+        .map((p) => `<li>${escapeHtml(p.programName)} — ${p.fit}</li>`)
+        .join("")}
+    </ol>
+    <p><strong>Ranked major tracks</strong></p>
+    <ol class="rank-list">
+      ${majors
+        .slice(0, 5)
+        .map((m) => `<li>${escapeHtml(m.trackKey)} — ${m.fit}</li>`)
+        .join("")}
+    </ol>
+  `;
 }
 
 function updateSessionUI() {
@@ -582,29 +1058,47 @@ function bindAlumniActions() {
   if (!loadQuestionsBtn || !submitResponsesBtn) return;
 
   loadQuestionsBtn.addEventListener("click", () => {
-    const course = document.getElementById("questionCourseSelect").value;
-    renderQuestionnaire(course);
+    if (state.currentUser && hasOfficialAttemptDone(state.currentUser.user_id)) {
+      showHomeToast("Your official assessment is already submitted. Review results or practice offline.", "error");
+      return;
+    }
+    const trackKey = getAssessmentTrackKey();
+    if (!trackKey) {
+      showHomeToast("Select a program (and major if required).", "error");
+      return;
+    }
+    renderQuestionnaire(trackKey);
   });
 
   submitResponsesBtn.addEventListener("click", () => {
     if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Alumni") {
-      alert("Please log in as an Alumni user before submitting responses.");
+      showHomeToast("Sign in as an alumni user to submit responses.", "error");
+      return;
+    }
+    if (hasOfficialAttemptDone(state.currentUser.user_id)) {
+      showHomeToast("Official attempt already recorded.", "error");
       return;
     }
     const form = document.getElementById("questionnaireForm");
-    const elements = [...form.querySelectorAll("select[data-question-id]")];
-    if (elements.length === 0) {
-      alert("Load questionnaire first.");
+    if (!form) return;
+    const picked = [...form.querySelectorAll("input[type=radio]:checked")];
+    if (picked.length === 0 || picked.length !== state.questions.length) {
+      showHomeToast("Answer every question, then submit.", "error");
+      if (PAGE === "home") setHomeWizardStep(2);
       return;
     }
 
-    const newResponses = elements.map((el) => ({
-      id: "R" + Math.random().toString(36).slice(2, 9),
-      user_id: state.currentUser.user_id,
-      question_id: el.dataset.questionId,
-      answer: el.value,
-      score: Number(el.value)
-    }));
+    const newResponses = picked.map((input) => {
+      const qMeta = state.questions.find((q) => q.id === input.name);
+      return {
+        id: "R" + Math.random().toString(36).slice(2, 9),
+        user_id: state.currentUser.user_id,
+        question_id: input.name,
+        answer: input.value,
+        score: Number(input.dataset.score),
+        category: qMeta ? qMeta.category : ""
+      };
+    });
     (async () => {
       try {
         if (USE_REMOTE_API) {
@@ -613,20 +1107,33 @@ function bindAlumniActions() {
             responses: newResponses.map((r) => ({
               question_id: r.question_id,
               answer: r.answer,
-              score: r.score
+              score: r.score,
+              category: r.category || ""
             }))
           });
           if (!res || !res.success) {
-            alert((res && res.message) || "Submission failed.");
+            showHomeToast((res && res.message) || "Submission failed.", "error");
             return;
           }
           const scoreMap = (res.computed && res.computed.scores) ? res.computed.scores : {};
           state.lastComputedScores = scoreMap;
           renderScoreCards(scoreMap);
           drawAlumniCharts(scoreMap);
+          applyRecommendationFromScores(scoreMap, state.currentTrackKey);
           await refreshAdminAnalytics();
+          markOfficialAttemptDone(state.currentUser.user_id);
+          try {
+            window.sessionStorage.setItem(
+              LAST_ASSESSMENT_TRACK_PREFIX + state.currentUser.user_id,
+              state.currentTrackKey || ""
+            );
+          } catch (e) {
+            /* ignore */
+          }
           renderAlumniKpis();
-          alert("Responses submitted. Competency scores have been computed.");
+          applyAssessmentLockUI();
+          showHomeToast("Official run saved. Your benchmark is locked in.", "success");
+          if (PAGE === "home") setHomeWizardStep(3);
           return;
         }
 
@@ -635,38 +1142,81 @@ function bindAlumniActions() {
         state.lastComputedScores = computed;
         renderScoreCards(computed);
         drawAlumniCharts(computed);
+        applyRecommendationFromScores(computed, state.currentTrackKey);
+        markOfficialAttemptDone(state.currentUser.user_id);
+        try {
+          window.sessionStorage.setItem(
+            LAST_ASSESSMENT_TRACK_PREFIX + state.currentUser.user_id,
+            state.currentTrackKey || ""
+          );
+        } catch (e) {
+          /* ignore */
+        }
         if (document.getElementById("adminKpi")) renderAdminDashboard();
         renderAlumniKpis();
-        alert("Responses submitted. Competency scores have been computed.");
+        applyAssessmentLockUI();
+        showHomeToast("Official run saved. Your benchmark is locked in.", "success");
+        if (PAGE === "home") setHomeWizardStep(3);
       } catch {
-        alert("Submission failed. Please try again.");
+        showHomeToast("Submission failed. Please try again.", "error");
       }
     })();
   });
 }
 
-function renderQuestionnaire(course) {
-  const form = document.getElementById("questionnaireForm");
-  const questions = state.questions.filter((q) => q.course === course);
-  if (questions.length === 0) {
-    form.innerHTML = "<p class='muted'>No questionnaire available for this course yet.</p>";
+function renderQuestionnaire(trackKey) {
+  if (state.currentUser && hasOfficialAttemptDone(state.currentUser.user_id)) {
+    showHomeToast("You cannot load another official questionnaire.", "error");
     return;
   }
+  const form = document.getElementById("questionnaireForm");
+  const hint = document.getElementById("courseStepHint");
+  const continueBtn = document.getElementById("wizardContinueFromCourse");
+  if (!form || typeof alsGetQuestionsForTrack !== "function") {
+    if (hint) hint.textContent = "Assessment module failed to load. Refresh the page.";
+    return;
+  }
+  const questions = alsGetQuestionsForTrack(trackKey);
+  state.currentTrackKey = trackKey;
+  state.questions = questions;
+  if (questions.length === 0) {
+    form.innerHTML = "";
+    if (hint) hint.textContent = "No assessment items are defined for this selection.";
+    if (continueBtn) continueBtn.disabled = true;
+    if (PAGE === "home") showHomeToast("No questions found for the selected track.", "error");
+    return;
+  }
+  if (hint) {
+    hint.textContent = `${questions.length} scenario items loaded (30 expected). Continue to responses when ready.`;
+  }
+  if (continueBtn) continueBtn.disabled = false;
   form.innerHTML = questions
-    .map(
-      (q) => `
-      <label>${q.question} <small>(${q.category})</small>
-        <select data-question-id="${q.id}">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3" selected>3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-        </select>
-      </label>
-    `
-    )
+    .map((q, idx) => {
+      const opts = q.choices
+        .map(
+          (ch) => `
+        <label class="option-card">
+          <input class="option-card__input" type="radio" name="${escapeHtml(q.id)}" value="${escapeHtml(ch.key)}" data-score="${ch.score}" required />
+          <span class="option-card__body">
+            <span class="option-card__key">${escapeHtml(ch.key)}.</span>
+            <span class="option-card__text">${escapeHtml(ch.text)}</span>
+          </span>
+        </label>`
+        )
+        .join("");
+      const catUpper = escapeHtml(String(q.category || "").toUpperCase());
+      return `
+      <article class="question-block" aria-labelledby="q-head-${idx}">
+        <header class="question-block__header" id="q-head-${idx}">
+          <span class="question-block__num">Question ${idx + 1}</span>
+          <span class="question-block__cat">${catUpper}</span>
+        </header>
+        <p class="question-block__stem">${escapeHtml(q.question)}</p>
+        <div class="question-block__options" role="radiogroup" aria-label="Question ${idx + 1}">${opts}</div>
+      </article>`;
+    })
     .join("");
+  if (PAGE === "home") setHomeWizardStep(2);
 }
 
 function computeScoresForUser(userId) {
@@ -704,21 +1254,30 @@ function renderScoreCards(scoreMap) {
   if (entries.length === 0) {
     scoreCards.classList.add("muted");
     scoreCards.textContent = "No computed scores yet.";
+    state.lastComputedOverall = null;
     return;
   }
   scoreCards.classList.remove("muted");
-  scoreCards.innerHTML = entries
-    .map(([category, score]) => {
-      const level = score >= 4 ? "High Proficiency" : "Emerging Proficiency";
-      return `
+  const overall = Number(
+    (entries.reduce((sum, [, v]) => sum + Number(v), 0) / entries.length).toFixed(2)
+  );
+  state.lastComputedOverall = overall;
+  const banner = `<div class="overall-score-banner"><strong>Overall mean</strong> (1–4 rubric): ${overall}</div>`;
+  scoreCards.innerHTML =
+    banner +
+    entries
+      .map(([category, score]) => {
+        const num = Number(score);
+        const level = num >= 3.25 ? "Strong band" : "Development band";
+        return `
         <div class="score-card">
           <p><strong>${category}</strong></p>
-          <p>Competency Score: ${score}</p>
-          <p>Performance Level: ${level}</p>
+          <p>Category mean: ${score}</p>
+          <p>Band: ${level}</p>
         </div>
       `;
-    })
-    .join("");
+      })
+      .join("");
 }
 
 function drawAlumniCharts(scoreMap) {
@@ -772,22 +1331,112 @@ function renderAdminDashboard() {
 
 function renderAlumniKpis() {
   const container = document.getElementById("alumniKpi");
-  if (!container) return;
-  const totalQuestions = state.questions.length;
-  const totalResponses = state.responses.length;
-  const completedUsers = new Set(state.results.map((r) => r.user_id)).size;
-  const avgScore =
-    state.results.length > 0
-      ? (state.results.reduce((sum, row) => sum + Number(row.score), 0) / state.results.length).toFixed(2)
-      : "0.00";
-  container.innerHTML = [
-    { label: "Assessment Items", value: totalQuestions },
-    { label: "Submitted Responses", value: totalResponses },
-    { label: "Alumni with Scores", value: completedUsers },
-    { label: "Overall Competency Avg", value: avgScore }
-  ]
-    .map((item) => `<article class="kpi-card"><p class="kpi-label">${item.label}</p><p class="kpi-value">${item.value}</p></article>`)
-    .join("");
+  if (!container || !state.currentUser) return;
+  const uid = state.currentUser.user_id;
+  const myResults = state.results.filter((r) => r.user_id === uid);
+  const myResponses = state.responses.filter((r) => r.user_id === uid);
+  const byCat = {};
+  myResults.forEach((row) => {
+    const k = row.category;
+    if (!byCat[k]) byCat[k] = [];
+    byCat[k].push(Number(row.score));
+  });
+  const catAvgs = Object.values(byCat).map((arr) => arr.reduce((a, b) => a + b, 0) / arr.length);
+  let overallNum = null;
+  if (typeof state.lastComputedOverall === "number" && !Number.isNaN(state.lastComputedOverall)) {
+    overallNum = state.lastComputedOverall;
+  } else if (catAvgs.length > 0) {
+    overallNum = catAvgs.reduce((a, b) => a + b, 0) / catAvgs.length;
+  }
+  const overallDisp =
+    overallNum != null && !Number.isNaN(overallNum) ? Number(overallNum).toFixed(2) : "—";
+  const masteryPct =
+    overallNum != null && !Number.isNaN(overallNum)
+      ? Math.min(100, Math.round(((overallNum - 1) / 3) * 100))
+      : 0;
+  const xpDisplay =
+    overallNum != null && !Number.isNaN(overallNum)
+      ? Math.round(((overallNum - 1) / 3) * 1000)
+      : 0;
+
+  const tier = getRankTier(overallNum);
+  const attemptLocked = hasOfficialAttemptDone(uid);
+  const attemptLabel = attemptLocked ? "Quest cleared · locked" : "Quest ready · 1 attempt";
+
+  let badgeDefs = [];
+  if (Object.keys(byCat).length > 0) {
+    badgeDefs = Object.entries(byCat).map(([cat, scores]) => {
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const unlocked = avg >= 3.25;
+      return { cat, avg: avg.toFixed(2), unlocked };
+    });
+  } else if (state.lastComputedScores && Object.keys(state.lastComputedScores).length > 0) {
+    badgeDefs = Object.entries(state.lastComputedScores).map(([cat, v]) => {
+      const avg = Number(v);
+      const unlocked = !Number.isNaN(avg) && avg >= 3.25;
+      return { cat, avg: Number.isNaN(avg) ? "—" : avg.toFixed(2), unlocked };
+    });
+  }
+
+  const program = state.currentUser.course && state.currentUser.course !== "-" ? state.currentUser.course : "—";
+  let major = state.currentUser.major;
+  if (!major || major === "-") major = "—";
+
+  const badgesHtml =
+    badgeDefs.length === 0
+      ? `<p class="game-badges-empty muted">Finish your official run to unlock category badges.</p>`
+      : `<div class="game-badges">
+          ${badgeDefs
+            .map((b) => {
+              const cls = b.unlocked ? "game-badge game-badge--unlocked" : "game-badge game-badge--locked";
+              const icon = b.unlocked ? "" : '<span class="game-badge__lock" aria-hidden="true"></span>';
+              return `<span class="${cls}" title="${escapeHtml(b.cat)}: ${b.avg}">${icon}<span class="game-badge__name">${escapeHtml(b.cat)}</span></span>`;
+            })
+            .join("")}
+        </div>`;
+
+  container.innerHTML = `
+    <div class="game-hub">
+      <article class="game-hero ${tier.cls}">
+        <div class="game-hero__rank">
+          <p class="game-hero__rank-label">Skill rank</p>
+          <p class="game-hero__rank-title">${escapeHtml(tier.label)}</p>
+          <p class="game-hero__rank-blurb">${escapeHtml(tier.blurb)}</p>
+        </div>
+        <div class="game-hero__meter">
+          <p class="game-hero__meter-label">Mastery meter</p>
+          <div class="game-xp-bar" role="progressbar" aria-valuenow="${masteryPct}" aria-valuemin="0" aria-valuemax="100">
+            <span class="game-xp-bar__fill" style="width:${masteryPct}%"></span>
+          </div>
+          <div class="game-hero__meter-meta">
+            <span><strong>${overallDisp}</strong> mean · scale 1–4</span>
+            <span>${xpDisplay} mastery XP</span>
+          </div>
+        </div>
+      </article>
+      <div class="game-stat-grid">
+        <article class="game-stat-tile game-stat-tile--quest">
+          <p class="game-stat-tile__label">Official attempt</p>
+          <p class="game-stat-tile__value">${escapeHtml(attemptLabel)}</p>
+          <p class="game-stat-tile__hint">One scored run — same items for your own study after.</p>
+        </article>
+        <article class="game-stat-tile game-stat-tile--loadout">
+          <p class="game-stat-tile__label">Loadout</p>
+          <p class="game-stat-tile__value">${escapeHtml(program)}</p>
+          <p class="game-stat-tile__hint">Major: ${escapeHtml(major)}</p>
+        </article>
+        <article class="game-stat-tile game-stat-tile--items">
+          <p class="game-stat-tile__label">Response log</p>
+          <p class="game-stat-tile__value">${myResponses.length} items</p>
+          <p class="game-stat-tile__hint">30 items = one full scenario run.</p>
+        </article>
+      </div>
+      <div class="game-badges-section">
+        <p class="game-badges-title">Category badges</p>
+        ${badgesHtml}
+      </div>
+    </div>
+  `;
 }
 
 function renderAdminKpis(analytics) {
@@ -797,13 +1446,43 @@ function renderAdminKpis(analytics) {
   const categoriesTracked = Object.keys(analytics.categoryDistribution).length;
   const rankedAlumni = analytics.performanceIndex.length;
   const topScore = rankedAlumni ? analytics.performanceIndex[0].competencyScore.toFixed(2) : "0.00";
-  container.innerHTML = [
-    { label: "Courses Tracked", value: coursesTracked },
-    { label: "Skill Categories", value: categoriesTracked },
-    { label: "Ranked Alumni", value: rankedAlumni },
-    { label: "Top Competency Score", value: topScore }
-  ]
-    .map((item) => `<article class="kpi-card"><p class="kpi-label">${item.label}</p><p class="kpi-value">${item.value}</p></article>`)
+  const tiles = [
+    {
+      mod: "programs",
+      label: "Programs",
+      hint: "Distinct course codes in dataset",
+      value: String(coursesTracked)
+    },
+    {
+      mod: "categories",
+      label: "Skill categories",
+      hint: "Aggregated competency dimensions",
+      value: String(categoriesTracked)
+    },
+    {
+      mod: "alumni",
+      label: "Alumni indexed",
+      hint: "Rows in performance index",
+      value: String(rankedAlumni)
+    },
+    {
+      mod: "leader",
+      label: "Top cohort score",
+      hint: "Highest mean competency",
+      value: topScore
+    }
+  ];
+  container.innerHTML = tiles
+    .map(
+      (t) => `
+    <article class="admin-kpi-tile admin-kpi-tile--${t.mod}">
+      <div class="admin-kpi-tile__meta">
+        <p class="admin-kpi-tile__label">${t.label}</p>
+        <p class="admin-kpi-tile__hint">${t.hint}</p>
+      </div>
+      <p class="admin-kpi-tile__value">${escapeHtml(t.value)}</p>
+    </article>`
+    )
     .join("");
 }
 
@@ -822,7 +1501,7 @@ function getAdminAnalytics() {
       alumni: anonymize(user.name),
       course: user.course,
       competencyScore: Number(avgScore.toFixed(2)),
-      performanceLevel: avgScore >= 4 ? "High Proficiency" : "Emerging Proficiency"
+      performanceLevel: avgScore >= 3 ? "High Proficiency" : "Emerging Proficiency"
     });
 
     if (!courseScores[user.course]) courseScores[user.course] = [];
@@ -985,7 +1664,7 @@ function showCategoryDrillDown(category) {
     .map((user) => {
       const result = state.results.find((r) => r.user_id === user.user_id && r.category === category);
       if (!result) return null;
-      const level = result.score >= 4 ? "High Proficiency" : "Development Area";
+      const level = result.score >= 3 ? "High Proficiency" : "Development Area";
       return {
         alumni: anonymize(user.name),
         course: user.course,
