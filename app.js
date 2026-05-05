@@ -3,30 +3,57 @@
 const PAGE = document.body.dataset.page || "auth";
 const ALSKILL_USER_KEY = "alskill_user";
 
-// IMPORTANT:
-// Set this to your Cloudflare Worker URL to avoid browser CORS issues.
-// Example: "https://your-worker-name.your-subdomain.workers.dev"
+/**
+ * Google Apps Script Web App: Deploy → Web app → copy the …/exec URL here.
+ * Leave placeholder text below to use the built-in demo data (no Sheets).
+ */
 const GAS_WEBAPP_URL =
-  "https://your-worker-name.your-subdomain.workers.dev";
+  "https://script.google.com/macros/s/AKfycbwRCic38f94xfVlvKIowHXlbA7DEDxJFtyp8diQes6yZ3YBwcLpR22ux3cPknYT5lttsg/exec";
 
-// Default to local mode to avoid CORS issues in static hosting.
-let USE_REMOTE_API = false;
+/**
+ * Calls your GAS backend when GAS_WEBAPP_URL looks configured.
+ * After a failed warmup, this is turned off so login still works against demo users.
+ */
+let USE_REMOTE_API = (function () {
+  const u = String(GAS_WEBAPP_URL || "").trim();
+  if (u.length < 16) return false;
+  if (/YOUR_DEPLOYMENT_ID|your-worker-name|your-subdomain\.workers\.dev/i.test(u)) return false;
+  return /^https:\/\//i.test(u);
+})();
+
+const FETCH_OPTS = { redirect: "follow" };
 
 async function apiGet(action, params = {}) {
   const url = new URL(GAS_WEBAPP_URL);
   url.searchParams.set("action", action);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
-  const res = await fetch(url.toString(), { method: "GET" });
-  return await res.json();
+  const res = await fetch(url.toString(), { method: "GET", ...FETCH_OPTS });
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("GET response was not JSON. Check the web app URL and redeploy if needed.");
+  }
 }
 
+/**
+ * POST uses Content-Type text/plain so the browser does not send a CORS preflight
+ * (Google Apps Script web apps do not handle OPTIONS). Body is still JSON for doPost.
+ */
 async function apiPost(action, payload) {
+  const body = JSON.stringify({ action, payload });
   const res = await fetch(GAS_WEBAPP_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, payload })
+    ...FETCH_OPTS,
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    body
   });
-  return await res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("POST response was not JSON. Check the web app URL and deployment access.");
+  }
 }
 
 const state = {
@@ -83,7 +110,17 @@ function normalizeRole(role) {
   const s = String(role == null ? "" : role)
     .trim()
     .toLowerCase();
-  if (s === "admin") return "Admin";
+  if (
+    s === "admin" ||
+    s === "administrator" ||
+    s === "sysadmin" ||
+    s === "system administrator" ||
+    s === "system admin" ||
+    s === "super admin" ||
+    s === "superadmin"
+  ) {
+    return "Admin";
+  }
   return "Alumni";
 }
 

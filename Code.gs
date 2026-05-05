@@ -11,6 +11,33 @@ var SHEET_NAMES = {
 };
 
 /**
+ * If the script is not container-bound to the Sheet, paste the Spreadsheet ID from the
+ * URL: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+ * (Required for many web app deployments; leave "" when using Sheet → Extensions → Apps Script.)
+ */
+var SPREADSHEET_ID = "";
+
+/**
+ * Resolves the spreadsheet. Web app calls have no "active" sheet unless the script is bound
+ * to the file, so we fall back to SPREADSHEET_ID or the script property SPREADSHEET_ID.
+ */
+function getSpreadsheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) return ss;
+  var id = String(SPREADSHEET_ID || "").trim();
+  if (!id) {
+    id = String(PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID") || "").trim();
+  }
+  if (id) {
+    return SpreadsheetApp.openById(id);
+  }
+  throw new Error(
+    "No spreadsheet: open your Google Sheet → Extensions → Apps Script and use this project from that file, " +
+      "or set var SPREADSHEET_ID in Code.gs to your Sheet ID (or set script property SPREADSHEET_ID)."
+  );
+}
+
+/**
  * doGet
  * Purpose:
  * Provides a lightweight HTTP GET router for the ALSKILL web app endpoint.
@@ -63,12 +90,15 @@ function doGet(e) {
  * JSON text response.
  */
 function doPost(e) {
-  var raw = (e && e.postData && e.postData.contents) ? e.postData.contents : "{}";
+  var raw = (e && e.postData && e.postData.contents) ? e.postData.contents : "";
+  if (!raw || !String(raw).trim()) {
+    return respondJson({ success: false, message: "Empty POST body. Send JSON: {\"action\":\"registerUser\",\"payload\":{...}}" });
+  }
   var body;
   try {
     body = JSON.parse(raw);
   } catch (parseErr) {
-    return respondJson({ success: false, message: "Invalid JSON body." });
+    return respondJson({ success: false, message: "Invalid JSON body: " + String(parseErr && parseErr.message ? parseErr.message : parseErr) });
   }
 
   var action = String(body.action || "").trim();
@@ -98,12 +128,15 @@ function doPost(e) {
 /**
  * respondJson
  * Purpose:
- * Returns a JSON payload with permissive CORS headers (useful for local testing).
+ * Returns JSON for the web app API (used by index.html via fetch from another origin).
  * Parameters:
  * obj (Object) - response object to serialize.
  * Logic:
  * 1) JSON.stringify the object.
  * 2) Return ContentService TextOutput with JSON MIME type.
+ * Note:
+ * Browsers calling this from static hosting should POST with Content-Type: text/plain
+ * and a JSON body (see app.js apiPost) so a CORS preflight is not required.
  * Output:
  * ContentService.TextOutput
  */
@@ -119,7 +152,10 @@ function respondJson(obj) {
  */
 function normalizeRole_(role) {
   var s = String(role == null ? "" : role).trim().toLowerCase();
-  if (s === "admin") return "Admin";
+  if (s === "admin" || s === "administrator" || s === "sysadmin" || s === "system administrator" || s === "system admin") {
+    return "Admin";
+  }
+  if (s === "super admin" || s === "superadmin") return "Admin";
   return "Alumni";
 }
 
@@ -152,7 +188,7 @@ function submitAssessment(payload) {
     return { success: false, message: "Missing required profile fields." };
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var usersSheet = ss.getSheetByName(SHEET_NAMES.USERS);
   var responsesSheet = ss.getSheetByName(SHEET_NAMES.RESPONSES);
 
@@ -230,7 +266,7 @@ function submitAssessment(payload) {
  * Object with success flag and details.
  */
 function initializeDatabase() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var structures = [
     { name: SHEET_NAMES.USERS, headers: ["user_id", "name", "email", "password", "course", "major", "batch", "role"] },
     { name: SHEET_NAMES.QUESTIONS, headers: ["id", "course", "category", "question", "type"] },
@@ -288,20 +324,28 @@ function initializeDatabase() {
  * Object with success flag, message, and created user metadata.
  */
 function registerUser(payload) {
-  initializeDatabase();
-  var required = ["name", "email", "password", "course"];
-  for (var i = 0; i < required.length; i++) {
-    if (!payload || !payload[required[i]]) {
-      return { success: false, message: "Missing required field: " + required[i] };
-    }
+  if (!payload) {
+    return { success: false, message: "Missing payload." };
   }
-  if (payload.batch === undefined || payload.batch === null || String(payload.batch).trim() === "") {
-    return { success: false, message: "Missing required field: batch" };
+  initializeDatabase();
+  var name = String(payload.name != null ? payload.name : "").trim();
+  var email = String(payload.email != null ? payload.email : "")
+    .trim()
+    .toLowerCase();
+  var password = payload.password != null ? String(payload.password) : "";
+  var course = String(payload.course != null ? payload.course : "").trim();
+  var major = payload.major != null && String(payload.major).trim() !== "" ? String(payload.major).trim() : "-";
+  var batchNum = Number(payload.batch);
+
+  if (!name || !email || !password || !course) {
+    return { success: false, message: "Missing name, email, password, or course." };
+  }
+  if (!isFinite(batchNum)) {
+    return { success: false, message: "Invalid or missing batch (use a year number, e.g. 2023)." };
   }
 
-  var usersSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.USERS);
+  var usersSheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.USERS);
   var data = usersSheet.getDataRange().getValues();
-  var email = String(payload.email).toLowerCase();
 
   for (var row = 1; row < data.length; row++) {
     if (String(data[row][2]).toLowerCase() === email) {
@@ -310,16 +354,7 @@ function registerUser(payload) {
   }
 
   var userId = "A" + new Date().getTime().toString().slice(-6);
-  usersSheet.appendRow([
-    userId,
-    payload.name,
-    email,
-    payload.password,
-    payload.course,
-    payload.major || "-",
-    Number(payload.batch),
-    "Alumni"
-  ]);
+  usersSheet.appendRow([userId, name, email, password, course, major, batchNum, "Alumni"]);
 
   return { success: true, message: "Registration successful.", user_id: userId };
 }
@@ -340,7 +375,7 @@ function registerUser(payload) {
  */
 function loginUser(email, password) {
   initializeDatabase();
-  var usersSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.USERS);
+  var usersSheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.USERS);
   var data = usersSheet.getDataRange().getValues();
   var credential = String(email || "").toLowerCase();
 
@@ -349,6 +384,9 @@ function loginUser(email, password) {
     var rowId = String(data[row][0]).toLowerCase();
     var rowPassword = String(data[row][3]);
     if ((rowEmail === credential || rowId === credential) && rowPassword === String(password)) {
+      var b = data[row][6];
+      var batchOut = b instanceof Date ? b.getFullYear() : Number(b);
+      if (!isFinite(batchOut)) batchOut = b;
       return {
         success: true,
         message: "Login successful.",
@@ -358,7 +396,7 @@ function loginUser(email, password) {
           email: data[row][2],
           course: data[row][4],
           major: data[row][5],
-          batch: data[row][6],
+          batch: batchOut,
           role: normalizeRole_(data[row][7])
         }
       };
@@ -382,7 +420,7 @@ function loginUser(email, password) {
  */
 function fetchQuestions(course) {
   initializeDatabase();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.QUESTIONS);
+  var sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.QUESTIONS);
   var data = sheet.getDataRange().getValues();
   var out = [];
   for (var i = 1; i < data.length; i++) {
@@ -418,7 +456,7 @@ function submitResponses(userId, responses) {
   if (!userId || !responses || !responses.length) {
     return { success: false, message: "Missing userId or responses." };
   }
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.RESPONSES);
+  var sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.RESPONSES);
   var rows = responses.map(function(item) {
     return [
       "R" + Utilities.getUuid().slice(0, 8),
@@ -451,7 +489,7 @@ function submitResponses(userId, responses) {
  */
 function computeSkillScores(userId) {
   initializeDatabase();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var responseSheet = ss.getSheetByName(SHEET_NAMES.RESPONSES);
   var questionSheet = ss.getSheetByName(SHEET_NAMES.QUESTIONS);
   var resultSheet = ss.getSheetByName(SHEET_NAMES.RESULTS);
@@ -513,7 +551,7 @@ function computeSkillScores(userId) {
  */
 function getAdminAnalytics() {
   initializeDatabase();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var users = ss.getSheetByName(SHEET_NAMES.USERS).getDataRange().getValues();
   var results = ss.getSheetByName(SHEET_NAMES.RESULTS).getDataRange().getValues();
 
@@ -598,7 +636,7 @@ function getAdminAnalytics() {
  */
 function getDrillDownData(type, key) {
   initializeDatabase();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var users = ss.getSheetByName(SHEET_NAMES.USERS).getDataRange().getValues();
   var results = ss.getSheetByName(SHEET_NAMES.RESULTS).getDataRange().getValues();
 
