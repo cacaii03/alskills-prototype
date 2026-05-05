@@ -1,5 +1,8 @@
 "use strict";
 
+const PAGE = document.body.dataset.page || "auth";
+const ALSKILL_USER_KEY = "alskill_user";
+
 // IMPORTANT:
 // Set this to your Cloudflare Worker URL to avoid browser CORS issues.
 // Example: "https://your-worker-name.your-subdomain.workers.dev"
@@ -76,22 +79,149 @@ const DEMO_DB = {
   ]
 };
 
-function init() {
+function normalizeRole(role) {
+  const s = String(role == null ? "" : role)
+    .trim()
+    .toLowerCase();
+  if (s === "admin") return "Admin";
+  return "Alumni";
+}
+
+function applyUserFromAuth(user) {
+  if (!user) return null;
+  return Object.assign({}, user, { role: normalizeRole(user.role) });
+}
+
+const USER_HASH_PREFIX = "#alskill=";
+
+/**
+ * file:// pages are different opaque origins, so sessionStorage does not carry
+ * between index.html and home.html. For file: we pass a one-time user payload in the hash.
+ */
+function userToHashFragment(user) {
+  const json = JSON.stringify(user);
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  return USER_HASH_PREFIX + encodeURIComponent(b64);
+}
+
+function tryConsumeUserFromHash() {
+  const h = window.location.hash || "";
+  if (!h.startsWith(USER_HASH_PREFIX)) return null;
+  try {
+    const b64 = decodeURIComponent(h.slice(USER_HASH_PREFIX.length));
+    const json = decodeURIComponent(escape(atob(b64)));
+    const user = applyUserFromAuth(JSON.parse(json));
+    sessionStorage.setItem(ALSKILL_USER_KEY, JSON.stringify(user));
+    history.replaceState(null, "", window.location.href.split("#")[0]);
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+function loadUserFromSession() {
+  const fromHash = tryConsumeUserFromHash();
+  if (fromHash) return fromHash;
+  try {
+    const raw = sessionStorage.getItem(ALSKILL_USER_KEY);
+    if (!raw) return null;
+    return applyUserFromAuth(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function saveUserToSession(user) {
+  sessionStorage.setItem(ALSKILL_USER_KEY, JSON.stringify(user));
+}
+
+function redirectAfterLogin() {
+  const user = state.currentUser;
+  if (!user) return;
+  const page = normalizeRole(user.role) === "Admin" ? "admin-dashboard.html" : "home.html";
+  const targetUrl = new URL(page, window.location.href).href.split("#")[0];
+  if (window.location.protocol === "file:") {
+    window.location.href = targetUrl + userToHashFragment(user);
+    return;
+  }
+  saveUserToSession(user);
+  window.location.href = page;
+}
+
+function bindLogout() {
+  const btn = document.getElementById("topLogoutBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    sessionStorage.removeItem(ALSKILL_USER_KEY);
+    state.currentUser = null;
+    window.location.href = "index.html";
+  });
+}
+
+function initAuthPage() {
+  state.users = [...DEMO_DB.users];
+  state.questions = [...DEMO_DB.questions];
+  state.responses = [...DEMO_DB.responses];
+  state.results = [...DEMO_DB.results];
+  warmupRemote();
+  bindAuthForms();
+  bindShellInteractions();
+  setAuthMode("login");
+}
+
+async function initHomePage() {
+  state.currentUser = loadUserFromSession();
+  if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Alumni") {
+    window.location.href = "index.html";
+    return;
+  }
   state.users = [...DEMO_DB.users];
   state.questions = [...DEMO_DB.questions];
   state.responses = [...DEMO_DB.responses];
   state.results = [...DEMO_DB.results];
   warmupRemote();
   bindNavigation();
-  bindAuthForms();
   bindAlumniActions();
   bindAdminActions();
   bindShellInteractions();
-  renderAdminDashboard();
+  bindLogout();
+  await hydrateQuestions();
+  renderProfile();
   renderAlumniKpis();
+  showSection("alumniSection");
+  setActiveNav("alumniSection");
   updateSessionUI();
-  setAuthMode("login");
-  showSection("authSection");
+}
+
+async function initAdminPage() {
+  state.currentUser = loadUserFromSession();
+  if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Admin") {
+    window.location.href = "index.html";
+    return;
+  }
+  state.users = [...DEMO_DB.users];
+  state.questions = [...DEMO_DB.questions];
+  state.responses = [...DEMO_DB.responses];
+  state.results = [...DEMO_DB.results];
+  warmupRemote();
+  bindAdminActions();
+  bindShellInteractions();
+  bindLogout();
+  if (USE_REMOTE_API) await refreshAdminAnalytics();
+  else renderAdminDashboard();
+  updateSessionUI();
+}
+
+function bootstrap() {
+  if (PAGE === "home") {
+    initHomePage();
+    return;
+  }
+  if (PAGE === "admin") {
+    initAdminPage();
+    return;
+  }
+  initAuthPage();
 }
 
 async function warmupRemote() {
@@ -118,12 +248,10 @@ async function hydrateQuestions() {
 }
 
 function bindNavigation() {
-  const navButtons = document.querySelectorAll(".nav-btn");
-  navButtons.forEach((btn) => {
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!canAccessSection(btn.dataset.section)) {
-        showSection("authSection");
-        setActiveNav(null);
+        window.location.href = "index.html";
         return;
       }
       document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
@@ -135,10 +263,21 @@ function bindNavigation() {
 
 function showSection(sectionId) {
   if (!canAccessSection(sectionId)) {
-    sectionId = "authSection";
+    if (PAGE === "home") sectionId = "alumniSection";
+    else if (PAGE === "admin") sectionId = "adminSection";
+    else sectionId = "authSection";
   }
-  document.querySelectorAll(".panel").forEach((panel) => panel.classList.remove("active"));
-  document.getElementById(sectionId).classList.add("active");
+  document.querySelectorAll("#appShell .panel").forEach((panel) => {
+    panel.classList.remove("active");
+  });
+  const authSection = document.getElementById("authSection");
+  const target = document.getElementById(sectionId);
+  if (sectionId === "authSection") {
+    if (authSection) authSection.classList.add("active");
+    return;
+  }
+  if (target) target.classList.add("active");
+  if (authSection) authSection.classList.remove("active");
 }
 
 function bindShellInteractions() {
@@ -182,11 +321,12 @@ async function refreshAdminAnalytics() {
 function bindAuthForms() {
   const registerForm = document.getElementById("registerForm");
   const loginForm = document.getElementById("loginForm");
-  const topLogoutBtn = document.getElementById("topLogoutBtn");
+  if (!registerForm || !loginForm) return;
   const loginStatus = document.getElementById("loginStatus");
   const registerStatus = document.getElementById("registerStatus");
   const showLoginBtn = document.getElementById("showLoginBtn");
   const showRegisterBtn = document.getElementById("showRegisterBtn");
+  if (!loginStatus || !registerStatus || !showLoginBtn || !showRegisterBtn) return;
 
   showLoginBtn.addEventListener("click", () => setAuthMode("login"));
   showRegisterBtn.addEventListener("click", () => setAuthMode("register"));
@@ -194,16 +334,28 @@ function bindAuthForms() {
   registerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const formData = Object.fromEntries(new FormData(registerForm).entries());
+    const email = String(formData.email || "")
+      .trim()
+      .toLowerCase();
+    const batchNum = Number(formData.batch);
+    if (!formData.name || !email || !formData.password || !formData.course) {
+      registerStatus.textContent = "Please fill all required fields.";
+      return;
+    }
+    if (!Number.isFinite(batchNum) || batchNum < 1990) {
+      registerStatus.textContent = "Please enter a valid batch year.";
+      return;
+    }
     (async () => {
       try {
         if (USE_REMOTE_API) {
           const res = await apiPost("registerUser", {
-            name: formData.name,
-            email: String(formData.email).toLowerCase(),
+            name: String(formData.name).trim(),
+            email,
             password: formData.password,
             course: formData.course,
             major: formData.major || "-",
-            batch: Number(formData.batch)
+            batch: batchNum
           });
           if (!res || !res.success) {
             registerStatus.textContent = (res && res.message) || "Registration failed.";
@@ -213,21 +365,21 @@ function bindAuthForms() {
           loginStatus.textContent = "";
           registerForm.reset();
           setAuthMode("login");
-          await refreshAdminAnalytics();
+          if (document.getElementById("adminKpi")) await refreshAdminAnalytics();
           return;
         }
 
         const newUser = {
           user_id: "A" + String(Date.now()).slice(-6),
-          name: formData.name,
-          email: formData.email.toLowerCase(),
+          name: String(formData.name).trim(),
+          email,
           password: formData.password,
           course: formData.course,
           major: formData.major || "-",
-          batch: Number(formData.batch),
+          batch: batchNum,
           role: "Alumni"
         };
-        if (state.users.some((user) => user.email === newUser.email)) {
+        if (state.users.some((user) => String(user.email).toLowerCase() === email)) {
           registerStatus.textContent = "Registration failed: email already exists.";
           return;
         }
@@ -235,11 +387,12 @@ function bindAuthForms() {
         registerStatus.textContent = "Registration successful. You may now log in.";
         loginStatus.textContent = "";
         registerForm.reset();
-        renderAdminDashboard();
-        renderAlumniKpis();
+        if (document.getElementById("adminKpi")) renderAdminDashboard();
+        if (document.getElementById("alumniKpi")) renderAlumniKpis();
         setAuthMode("login");
-      } catch {
-        registerStatus.textContent = "Registration failed. Please try again.";
+      } catch (err) {
+        registerStatus.textContent =
+          err && err.message ? String(err.message) : "Registration failed. Check API URL or network.";
       }
     })();
   });
@@ -247,59 +400,52 @@ function bindAuthForms() {
   loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const formData = Object.fromEntries(new FormData(loginForm).entries());
-    const credential = String(formData.email).toLowerCase().trim();
+    const credential = String(formData.email || "")
+      .trim()
+      .toLowerCase();
+    const password = formData.password != null ? String(formData.password) : "";
+    if (!credential || !password) {
+      loginStatus.textContent = "Enter email or ID and password.";
+      return;
+    }
     (async () => {
       try {
         if (USE_REMOTE_API) {
-          const res = await apiPost("loginUser", { credential, password: formData.password });
+          const res = await apiPost("loginUser", { credential, password });
           if (!res || !res.success) {
             loginStatus.textContent = (res && res.message) || "Invalid credentials.";
             return;
           }
-          state.currentUser = res.user;
+          if (!res.user) {
+            loginStatus.textContent = "Invalid server response (missing user).";
+            return;
+          }
+          state.currentUser = applyUserFromAuth(res.user);
           loginStatus.textContent = "";
           registerStatus.textContent = "";
-          renderProfile();
-          await hydrateQuestions();
-          await refreshAdminAnalytics();
-          renderAlumniKpis();
-          updateSessionUI();
-          routeToDashboard();
+          redirectAfterLogin();
           return;
         }
 
         const matchedUser = state.users.find(
           (user) =>
-            (user.email.toLowerCase() === credential || String(user.user_id).toLowerCase() === credential) &&
-            user.password === formData.password
+            (String(user.email).toLowerCase() === credential ||
+              String(user.user_id).toLowerCase() === credential) &&
+            String(user.password) === password
         );
         if (!matchedUser) {
           loginStatus.textContent = "Invalid credentials.";
           return;
         }
-        state.currentUser = matchedUser;
+        state.currentUser = applyUserFromAuth({ ...matchedUser });
         loginStatus.textContent = "";
         registerStatus.textContent = "";
-        renderProfile();
-        renderAdminDashboard();
-        renderAlumniKpis();
-        updateSessionUI();
-        routeToDashboard();
-      } catch {
-        loginStatus.textContent = "Login failed. Please try again.";
+        redirectAfterLogin();
+      } catch (err) {
+        loginStatus.textContent =
+          err && err.message ? String(err.message) : "Login failed. Check API URL or network.";
       }
     })();
-  });
-
-  topLogoutBtn.addEventListener("click", () => {
-    state.currentUser = null;
-    loginStatus.textContent = "Logged out.";
-    registerStatus.textContent = "";
-    document.getElementById("profileCard").textContent = "Please log in as Alumni to view profile details.";
-    updateSessionUI();
-    setAuthMode("login");
-    showSection("authSection");
-    setActiveNav(null);
   });
 }
 
@@ -308,6 +454,7 @@ function setAuthMode(mode) {
   const registerPanel = document.getElementById("registerPanel");
   const showLoginBtn = document.getElementById("showLoginBtn");
   const showRegisterBtn = document.getElementById("showRegisterBtn");
+  if (!loginPanel || !registerPanel || !showLoginBtn || !showRegisterBtn) return;
   if (mode === "register") {
     loginPanel.classList.add("hidden");
     registerPanel.classList.remove("hidden");
@@ -326,28 +473,14 @@ function setAuthMode(mode) {
 }
 
 function canAccessSection(sectionId) {
-  if (sectionId === "authSection") return true;
+  if (sectionId === "authSection") return !!document.getElementById("authSection");
   if (!state.currentUser) return false;
+  const role = normalizeRole(state.currentUser.role);
   if (sectionId === "settingsSection") return true;
   if (sectionId === "infoSection") return true;
-  if (sectionId === "alumniSection") return state.currentUser.role === "Alumni";
-  if (sectionId === "adminSection") return state.currentUser.role === "Admin";
+  if (sectionId === "alumniSection") return role === "Alumni" && !!document.getElementById("alumniSection");
+  if (sectionId === "adminSection") return role === "Admin" && !!document.getElementById("adminSection");
   return false;
-}
-
-function routeToDashboard() {
-  if (!state.currentUser) {
-    showSection("authSection");
-    setActiveNav(null);
-    return;
-  }
-  if (state.currentUser.role === "Admin") {
-    showSection("adminSection");
-    setActiveNav("adminSection");
-    return;
-  }
-  showSection("alumniSection");
-  setActiveNav("alumniSection");
 }
 
 function setActiveNav(sectionId) {
@@ -361,22 +494,41 @@ function updateSessionUI() {
   const authSection = document.getElementById("authSection");
   const sessionLabel = document.getElementById("sessionLabel");
   const topLogoutBtn = document.getElementById("topLogoutBtn");
-  if (!state.currentUser) {
-    appShell.classList.add("hidden");
-    authSection.classList.remove("hidden");
-    topLogoutBtn.classList.add("hidden");
-    sessionLabel.textContent = "Not logged in";
+
+  if (authSection && appShell) {
+    if (!state.currentUser) {
+      appShell.classList.add("hidden");
+      authSection.classList.remove("hidden");
+      if (topLogoutBtn) topLogoutBtn.classList.add("hidden");
+      if (sessionLabel) sessionLabel.textContent = "Not logged in";
+    } else {
+      appShell.classList.remove("hidden");
+      authSection.classList.add("hidden");
+      if (topLogoutBtn) topLogoutBtn.classList.remove("hidden");
+      if (sessionLabel) sessionLabel.textContent = `${state.currentUser.name} (${state.currentUser.role})`;
+    }
+    updateNavVisibility();
     return;
   }
-  appShell.classList.remove("hidden");
-  authSection.classList.add("hidden");
-  topLogoutBtn.classList.remove("hidden");
-  sessionLabel.textContent = `${state.currentUser.name} (${state.currentUser.role})`;
+
+  if (sessionLabel) {
+    sessionLabel.textContent = state.currentUser
+      ? `${state.currentUser.name} (${state.currentUser.role})`
+      : "Not logged in";
+  }
+  if (topLogoutBtn) topLogoutBtn.classList.toggle("hidden", !state.currentUser);
+}
+
+function updateNavVisibility() {
+  const adminBtn = document.querySelector('.nav-btn[data-section="adminSection"]');
+  if (!adminBtn) return;
+  const showAdmin = state.currentUser && normalizeRole(state.currentUser.role) === "Admin";
+  adminBtn.classList.toggle("hidden", !showAdmin);
 }
 
 function renderProfile() {
   const profileCard = document.getElementById("profileCard");
-  if (!state.currentUser) return;
+  if (!profileCard || !state.currentUser) return;
   profileCard.innerHTML = `
     <p><strong>Name:</strong> ${state.currentUser.name}</p>
     <p><strong>Email:</strong> ${state.currentUser.email}</p>
@@ -390,6 +542,7 @@ function renderProfile() {
 function bindAlumniActions() {
   const loadQuestionsBtn = document.getElementById("loadQuestionsBtn");
   const submitResponsesBtn = document.getElementById("submitResponsesBtn");
+  if (!loadQuestionsBtn || !submitResponsesBtn) return;
 
   loadQuestionsBtn.addEventListener("click", () => {
     const course = document.getElementById("questionCourseSelect").value;
@@ -397,7 +550,7 @@ function bindAlumniActions() {
   });
 
   submitResponsesBtn.addEventListener("click", () => {
-    if (!state.currentUser || state.currentUser.role !== "Alumni") {
+    if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Alumni") {
       alert("Please log in as an Alumni user before submitting responses.");
       return;
     }
@@ -445,7 +598,7 @@ function bindAlumniActions() {
         state.lastComputedScores = computed;
         renderScoreCards(computed);
         drawAlumniCharts(computed);
-        renderAdminDashboard();
+        if (document.getElementById("adminKpi")) renderAdminDashboard();
         renderAlumniKpis();
         alert("Responses submitted. Competency scores have been computed.");
       } catch {
@@ -509,6 +662,7 @@ function computeScoresForUser(userId) {
 
 function renderScoreCards(scoreMap) {
   const scoreCards = document.getElementById("scoreCards");
+  if (!scoreCards) return;
   const entries = Object.entries(scoreMap);
   if (entries.length === 0) {
     scoreCards.classList.add("muted");
@@ -533,30 +687,39 @@ function renderScoreCards(scoreMap) {
 function drawAlumniCharts(scoreMap) {
   const entries = Object.entries(scoreMap);
   const canvasBar = document.getElementById("alumniBarChart");
+  const canvasRadar = document.getElementById("alumniRadarChart");
+  if (!canvasBar || !canvasRadar) return;
   const ctxBar = canvasBar.getContext("2d");
   clearCanvas(ctxBar, canvasBar);
   drawBars(ctxBar, canvasBar, entries, ["#1d4e89", "#2b6cb0", "#e3b341"]);
 
-  const canvasRadar = document.getElementById("alumniRadarChart");
   const ctxRadar = canvasRadar.getContext("2d");
   clearCanvas(ctxRadar, canvasRadar);
   drawRadar(ctxRadar, canvasRadar, entries);
 }
 
 function bindAdminActions() {
-  document.getElementById("closeDrillBtn").addEventListener("click", closeModal);
+  const closeDrillBtn = document.getElementById("closeDrillBtn");
+  if (closeDrillBtn) closeDrillBtn.addEventListener("click", closeModal);
 
-  document.getElementById("courseChart").addEventListener("click", (event) => {
-    const course = detectBarClick(event, "course");
-    if (course) showCourseDrillDown(course);
-  });
-  document.getElementById("categoryChart").addEventListener("click", (event) => {
-    const category = detectBarClick(event, "category");
-    if (category) showCategoryDrillDown(category);
-  });
+  const courseChart = document.getElementById("courseChart");
+  if (courseChart) {
+    courseChart.addEventListener("click", (event) => {
+      const course = detectBarClick(event, "course");
+      if (course) showCourseDrillDown(course);
+    });
+  }
+  const categoryChart = document.getElementById("categoryChart");
+  if (categoryChart) {
+    categoryChart.addEventListener("click", (event) => {
+      const category = detectBarClick(event, "category");
+      if (category) showCategoryDrillDown(category);
+    });
+  }
 }
 
 function renderAdminDashboard() {
+  if (!document.getElementById("adminKpi")) return;
   if (USE_REMOTE_API) {
     refreshAdminAnalytics();
     return;
@@ -608,7 +771,7 @@ function renderAdminKpis(analytics) {
 }
 
 function getAdminAnalytics() {
-  const alumniUsers = state.users.filter((u) => u.role === "Alumni");
+  const alumniUsers = state.users.filter((u) => normalizeRole(u.role) === "Alumni");
   const courseScores = {};
   const categoryDistribution = {};
   const performanceIndex = [];
@@ -658,6 +821,7 @@ function getAdminAnalytics() {
 
 function renderRankingTable(rows) {
   const container = document.getElementById("rankingTableWrap");
+  if (!container) return;
   if (rows.length === 0) {
     container.innerHTML = "<p class='muted'>No performance records available.</p>";
     return;
@@ -694,6 +858,7 @@ function renderRankingTable(rows) {
 
 function renderCourseList(courseScores) {
   const container = document.getElementById("courseList");
+  if (!container) return;
   const entries = Object.entries(courseScores);
   container.innerHTML = entries
     .map(([course, score]) => `<button class="chip" data-course="${course}">${course}: ${score}</button>`)
@@ -705,6 +870,7 @@ function renderCourseList(courseScores) {
 
 function renderCategoryList(categoryScores) {
   const container = document.getElementById("categoryList");
+  if (!container) return;
   const entries = Object.entries(categoryScores);
   container.innerHTML = entries
     .map(([category, score]) => `<button class="chip" data-category="${category}">${category}: ${score}</button>`)
@@ -715,24 +881,26 @@ function renderCategoryList(categoryScores) {
 }
 
 function drawAdminCharts(analytics) {
+  const courseCanvas = document.getElementById("courseChart");
+  const categoryCanvas = document.getElementById("categoryChart");
+  if (!courseCanvas || !categoryCanvas) return;
+
   const courseEntries = Object.entries(analytics.courseScores);
   const categoryEntries = Object.entries(analytics.categoryDistribution);
   state.charts.courseEntries = courseEntries;
   state.charts.categoryEntries = categoryEntries;
 
-  const courseCanvas = document.getElementById("courseChart");
   const courseCtx = courseCanvas.getContext("2d");
   clearCanvas(courseCtx, courseCanvas);
   drawBars(courseCtx, courseCanvas, courseEntries, ["#1d4e89", "#2b6cb0", "#3b82c4", "#60a5fa", "#e3b341"]);
 
-  const categoryCanvas = document.getElementById("categoryChart");
   const categoryCtx = categoryCanvas.getContext("2d");
   clearCanvas(categoryCtx, categoryCanvas);
   drawBars(categoryCtx, categoryCanvas, categoryEntries, ["#2b6cb0", "#1d4e89", "#e3b341"]);
 }
 
 function showCourseDrillDown(course) {
-  const users = state.users.filter((user) => user.role === "Alumni" && user.course === course);
+  const users = state.users.filter((user) => normalizeRole(user.role) === "Alumni" && user.course === course);
   const rows = users
     .map((user) => {
       const results = state.results.filter((r) => r.user_id === user.user_id);
@@ -776,7 +944,7 @@ function showCourseDrillDown(course) {
 
 function showCategoryDrillDown(category) {
   const rows = state.users
-    .filter((u) => u.role === "Alumni")
+    .filter((u) => normalizeRole(u.role) === "Alumni")
     .map((user) => {
       const result = state.results.find((r) => r.user_id === user.user_id && r.category === category);
       if (!result) return null;
@@ -818,15 +986,19 @@ function showCategoryDrillDown(category) {
 }
 
 function openModal(title, html) {
-  document.getElementById("drillTitle").textContent = title;
-  document.getElementById("drillBody").innerHTML = html;
+  const titleEl = document.getElementById("drillTitle");
+  const bodyEl = document.getElementById("drillBody");
   const panel = document.getElementById("drillDownPanel");
+  if (!titleEl || !bodyEl || !panel) return;
+  titleEl.textContent = title;
+  bodyEl.innerHTML = html;
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
 }
 
 function closeModal() {
   const panel = document.getElementById("drillDownPanel");
+  if (!panel) return;
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
 }
@@ -930,4 +1102,4 @@ function anonymize(name) {
     .join(" ");
 }
 
-window.addEventListener("DOMContentLoaded", init);
+window.addEventListener("DOMContentLoaded", bootstrap);

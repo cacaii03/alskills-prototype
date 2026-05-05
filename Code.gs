@@ -28,12 +28,11 @@ function doGet(e) {
   var action = String(params.action || "").trim();
 
   try {
-    // If no action is provided, serve the dashboard UI (HtmlService).
+    // UI is served as static files (index.html, home.html, admin-dashboard.html). This URL is the JSON API.
     if (!action) {
-      return HtmlService
-        .createHtmlOutput(buildSimpleIndexHtml())
-        .setTitle("ALSKILL")
-        .addMetaTag("viewport", "width=device-width, initial-scale=1");
+      return ContentService.createTextOutput(
+        "ALSKILL API: pass ?action=initializeDatabase, fetchQuestions, getAdminAnalytics, or getDrillDownData. Open index.html from your host for the web UI."
+      ).setMimeType(ContentService.MimeType.TEXT);
     }
 
     if (action === "initializeDatabase") return respondJson(initializeDatabase());
@@ -77,7 +76,14 @@ function doPost(e) {
 
   try {
     if (action === "registerUser") return respondJson(registerUser(payload));
-    if (action === "loginUser") return respondJson(loginUser(payload && payload.credential, payload && payload.password));
+    if (action === "loginUser") {
+      var cred =
+        payload &&
+        (payload.credential != null && String(payload.credential).trim() !== ""
+          ? payload.credential
+          : payload.email);
+      return respondJson(loginUser(cred, payload && payload.password));
+    }
     if (action === "submitResponses") return respondJson(submitResponses(payload && payload.user_id, payload && payload.responses));
 
     return respondJson({
@@ -108,49 +114,13 @@ function respondJson(obj) {
 }
 
 /**
- * include
- * Purpose:
- * Allows HtmlService templates to inline other files.
- * Parameters:
- * filename (String) - Apps Script HTML filename (without extension).
- * Logic:
- * 1) Load the HTML file content.
- * Output:
- * HTML string.
+ * normalizeRole_
+ * Maps sheet role strings to canonical Admin / Alumni for the client.
  */
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
-}
-
-/**
- * injectBetween_
- * Replaces the span between a unique start marker and the next endMarker in source.
- */
-function injectBetween_(source, startMarker, endMarker, insertion) {
-  var i = source.indexOf(startMarker);
-  if (i === -1) {
-    throw new Error("injectBetween_: start marker not found: " + startMarker);
-  }
-  i += startMarker.length;
-  var j = source.indexOf(endMarker, i);
-  if (j === -1) {
-    throw new Error("injectBetween_: end marker not found after " + startMarker);
-  }
-  return source.substring(0, i) + insertion + source.substring(j);
-}
-
-/**
- * buildSimpleIndexHtml
- * Assembles the SimpleIndex shell with inlined StylesRaw and SimpleClient so the
- * HTML files stay valid for editors (no template tags inside style/script).
- */
-function buildSimpleIndexHtml() {
-  var html = HtmlService.createHtmlOutputFromFile("SimpleIndex").getContent();
-  var css = HtmlService.createHtmlOutputFromFile("StylesRaw").getContent();
-  var js = HtmlService.createHtmlOutputFromFile("SimpleClient").getContent();
-  html = injectBetween_(html, "<style data-alskill-css>", "</style>", "\n" + css + "\n");
-  html = injectBetween_(html, "<script data-alskill-js>", "</script>", "\n" + js + "\n");
-  return html;
+function normalizeRole_(role) {
+  var s = String(role == null ? "" : role).trim().toLowerCase();
+  if (s === "admin") return "Admin";
+  return "Alumni";
 }
 
 /**
@@ -319,11 +289,14 @@ function initializeDatabase() {
  */
 function registerUser(payload) {
   initializeDatabase();
-  var required = ["name", "email", "password", "course", "batch"];
+  var required = ["name", "email", "password", "course"];
   for (var i = 0; i < required.length; i++) {
     if (!payload || !payload[required[i]]) {
       return { success: false, message: "Missing required field: " + required[i] };
     }
+  }
+  if (payload.batch === undefined || payload.batch === null || String(payload.batch).trim() === "") {
+    return { success: false, message: "Missing required field: batch" };
   }
 
   var usersSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.USERS);
@@ -386,7 +359,7 @@ function loginUser(email, password) {
           course: data[row][4],
           major: data[row][5],
           batch: data[row][6],
-          role: data[row][7]
+          role: normalizeRole_(data[row][7])
         }
       };
     }
@@ -549,7 +522,7 @@ function getAdminAnalytics() {
     userMap[users[i][0]] = {
       name: users[i][1],
       course: users[i][4],
-      role: users[i][7]
+      role: normalizeRole_(users[i][7])
     };
   }
 
@@ -634,7 +607,7 @@ function getDrillDownData(type, key) {
     userMap[users[i][0]] = {
       name: users[i][1],
       course: users[i][4],
-      role: users[i][7]
+      role: normalizeRole_(users[i][7])
     };
   }
 

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ALSKILL — Alumni</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="home">
+    <header class="global-header">
+      <div class="global-brand">
+        <span class="logo-mark" aria-hidden="true"></span>
+        <div>
+          <strong>ALSKILL Platform</strong>
+          <p>Alumni dashboard</p>
+        </div>
+      </div>
+    </header>
+
+    <div id="appShell" class="app-shell">
+      <aside id="sidebar" class="sidebar">
+        <div class="brand">
+          <button id="sidebarToggleBtn" class="icon-btn ripple" type="button" title="Toggle sidebar">☰</button>
+          <div class="brand-text">
+            <h2>ALSKILL</h2>
+            <p>Your workspace</p>
+          </div>
+        </div>
+        <nav class="side-nav">
+          <button type="button" class="nav-btn ripple active" data-section="alumniSection"><span>▣</span><em>Dashboard</em></button>
+          <button type="button" class="nav-btn ripple" data-section="infoSection"><span>☰</span><em>Reports</em></button>
+          <button type="button" class="nav-btn ripple" data-section="settingsSection"><span>⚙</span><em>Settings</em></button>
+        </nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="top-search">
+            <input id="globalSearch" type="text" placeholder="Search course, alumni, or category..." />
+          </div>
+          <div class="top-actions">
+            <span id="sessionLabel" class="muted"></span>
+            <button id="topLogoutBtn" class="ghost ripple" type="button">Logout</button>
+          </div>
+        </header>
+
+        <main class="container">
+          <section id="alumniSection" class="panel active">
+            <h2>Dashboard</h2>
+            <p class="section-note">Profile, questionnaire, and competency visuals.</p>
+            <div id="alumniKpi" class="kpi-grid"></div>
+            <div class="grid two">
+              <article class="card">
+                <h3>Profile Summary</h3>
+                <div id="profileCard" class="muted">Loading…</div>
+              </article>
+              <article class="card">
+                <h3>Skill Questionnaire</h3>
+                <div class="inline-controls">
+                  <label>Course
+                    <select id="questionCourseSelect">
+                      <option>BSIT</option>
+                      <option>BSBA - Marketing</option>
+                      <option>BSED</option>
+                      <option>BEED</option>
+                      <option>BECED</option>
+                    </select>
+                  </label>
+                  <button id="loadQuestionsBtn" class="ghost ripple" type="button">Load Questions</button>
+                </div>
+                <form id="questionnaireForm" class="form"></form>
+                <button id="submitResponsesBtn" class="primary ripple" type="button">Submit Responses</button>
+              </article>
+            </div>
+            <div class="grid two">
+              <article class="card">
+                <h3>Skill Score Cards</h3>
+                <div id="scoreCards" class="cards-inline muted">No computed scores yet.</div>
+              </article>
+              <article class="card">
+                <h3>Category Breakdown</h3>
+                <canvas id="alumniBarChart" width="420" height="220"></canvas>
+                <canvas id="alumniRadarChart" width="420" height="220"></canvas>
+              </article>
+            </div>
+          </section>
+
+          <section id="infoSection" class="panel">
+            <h2>Reports</h2>
+            <div class="grid two">
+              <article class="card">
+                <h3>Purpose and Importance</h3>
+                <ul>
+                  <li>Evaluate alumni competencies through structured assessment metrics.</li>
+                  <li>Identify development areas and high-proficiency clusters.</li>
+                  <li>Support evidence-based program and curriculum enhancement.</li>
+                </ul>
+              </article>
+              <article class="card">
+                <h3>Process and Stack</h3>
+                <ol>
+                  <li>Alumni submit assessment responses.</li>
+                  <li>System computes category competency scores.</li>
+                  <li>Data is stored in Google Sheets via Apps Script.</li>
+                  <li>Dashboard visualizes trends and rankings.</li>
+                </ol>
+              </article>
+            </div>
+          </section>
+
+          <section id="settingsSection" class="panel">
+            <h2>Settings</h2>
+            <article class="card">
+              <h3>Profile Preferences</h3>
+              <form class="form">
+                <label>Display Name<input type="text" placeholder="Enter display name" /></label>
+                <label>Email Notifications
+                  <select>
+                    <option>Enabled</option>
+                    <option>Disabled</option>
+                  </select>
+                </label>
+                <button class="primary ripple" type="button">Save Preferences</button>
+              </form>
+            </article>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <div id="drillDownPanel" class="drill-panel" aria-hidden="true">
+      <div class="drill-head">
+        <h3 id="drillTitle">Detail View</h3>
+        <button id="closeDrillBtn" class="ghost ripple" type="button">Close</button>
+      </div>
+      <div id="drillBody" class="drill-body"></div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
