@@ -58,12 +58,14 @@ function doGet(e) {
     // UI is served as static files (index.html, home.html, admin-dashboard.html). This URL is the JSON API.
     if (!action) {
       return ContentService.createTextOutput(
-        "ALSKILL API: pass ?action=initializeDatabase, fetchQuestions, getAdminAnalytics, or getDrillDownData. Open index.html from your host for the web UI."
+        "ALSKILL API: pass ?action=initializeDatabase, fetchQuestions, fetchUserAssessmentData, validateSession, getAdminAnalytics, or getDrillDownData. Open index.html from your host for the web UI."
       ).setMimeType(ContentService.MimeType.TEXT);
     }
 
     if (action === "initializeDatabase") return respondJson(initializeDatabase());
     if (action === "fetchQuestions") return respondJson(fetchQuestions(params.course));
+    if (action === "fetchUserAssessmentData") return respondJson(fetchUserAssessmentData(params.user_id));
+    if (action === "validateSession") return respondJson(validateSession(params.session_token));
     if (action === "getAdminAnalytics") return respondJson(getAdminAnalytics());
     if (action === "getDrillDownData") return respondJson(getDrillDownData(params.type, params.key));
 
@@ -115,6 +117,7 @@ function doPost(e) {
       return respondJson(loginUser(cred, payload && payload.password));
     }
     if (action === "submitResponses") return respondJson(submitResponses(payload && payload.user_id, payload && payload.responses));
+    if (action === "logoutSession") return respondJson(logoutSession(payload && payload.session_token));
 
     return respondJson({
       success: false,
@@ -377,6 +380,83 @@ function registerUser(payload) {
 }
 
 /**
+ * Server-side session token (CacheService, max TTL 6 hours).
+ */
+function issueSessionToken_(userId) {
+  var cache = CacheService.getScriptCache();
+  var token =
+    Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+  var key = "alskill_sid_" + token;
+  cache.put(key, String(userId), 21600);
+  return token;
+}
+
+/**
+ * Loads user profile by user_id from the Users sheet.
+ */
+function findUserById_(userId) {
+  initializeDatabase();
+  var uid = String(userId || "").trim();
+  if (!uid) return null;
+  var usersSheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.USERS);
+  var data = usersSheet.getDataRange().getValues();
+  for (var row = 1; row < data.length; row++) {
+    if (String(data[row][0]) === uid) {
+      var b = data[row][6];
+      var batchOut = b instanceof Date ? b.getFullYear() : Number(b);
+      if (!isFinite(batchOut)) batchOut = b;
+      return {
+        user_id: data[row][0],
+        name: data[row][1],
+        email: data[row][2],
+        course: data[row][4],
+        major: data[row][5],
+        batch: batchOut,
+        role: normalizeRole_(data[row][7])
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * validateSession (GET)
+ * Sliding expiration: cache TTL refreshed on each successful validation.
+ */
+function validateSession(sessionToken) {
+  var raw = sessionToken != null ? String(sessionToken).trim() : "";
+  if (!raw) {
+    return { success: false, message: "Missing session token." };
+  }
+  var cache = CacheService.getScriptCache();
+  var key = "alskill_sid_" + raw;
+  var userId = cache.get(key);
+  if (!userId) {
+    return { success: false, message: "Session expired or signed out." };
+  }
+  var user = findUserById_(userId);
+  if (!user) {
+    cache.remove(key);
+    return { success: false, message: "User record not found." };
+  }
+  cache.put(key, String(userId), 21600);
+  return { success: true, message: "OK", user: user, sessionMaxAgeSec: 21600 };
+}
+
+/**
+ * logoutSession (POST) — invalidates server session token.
+ */
+function logoutSession(sessionToken) {
+  var raw = sessionToken != null ? String(sessionToken).trim() : "";
+  if (!raw) {
+    return { success: false, message: "Missing session token." };
+  }
+  var cache = CacheService.getScriptCache();
+  cache.remove("alskill_sid_" + raw);
+  return { success: true, message: "Signed out." };
+}
+
+/**
  * loginUser
  * Purpose:
  * Authenticates user credentials and returns role-specific profile details.
@@ -404,9 +484,12 @@ function loginUser(email, password) {
       var b = data[row][6];
       var batchOut = b instanceof Date ? b.getFullYear() : Number(b);
       if (!isFinite(batchOut)) batchOut = b;
+      var sid = issueSessionToken_(String(data[row][0]));
       return {
         success: true,
         message: "Login successful.",
+        sessionToken: sid,
+        sessionMaxAgeSec: 21600,
         user: {
           user_id: data[row][0],
           name: data[row][1],
@@ -452,6 +535,61 @@ function fetchQuestions(course) {
     }
   }
   return { success: true, questions: out };
+}
+
+/**
+ * fetchUserAssessmentData
+ * Purpose:
+ * Returns persisted Responses and Results rows for one user so the client can hydrate after submit or reload.
+ */
+function fetchUserAssessmentData(userId) {
+  initializeDatabase();
+  if (!userId || String(userId).trim() === "") {
+    return { success: false, message: "Missing user_id." };
+  }
+  var uid = String(userId).trim();
+  var ss = getSpreadsheet_();
+  var responseSheet = ss.getSheetByName(SHEET_NAMES.RESPONSES);
+  var resultSheet = ss.getSheetByName(SHEET_NAMES.RESULTS);
+  var respRows = responseSheet.getDataRange().getValues();
+  var resRows = resultSheet.getDataRange().getValues();
+
+  var responses = [];
+  var i;
+  for (i = 1; i < respRows.length; i++) {
+    if (String(respRows[i][1]) !== uid) continue;
+    responses.push({
+      id: String(respRows[i][0]),
+      user_id: String(respRows[i][1]),
+      question_id: String(respRows[i][2]),
+      answer: String(respRows[i][3]),
+      score: Number(respRows[i][4]),
+      category: respRows[i].length > 5 && respRows[i][5] != null ? String(respRows[i][5]) : ""
+    });
+  }
+
+  var results = [];
+  for (i = 1; i < resRows.length; i++) {
+    if (String(resRows[i][1]) !== uid) continue;
+    var d = resRows[i][4];
+    var dateStr;
+    if (d instanceof Date) {
+      dateStr = d.toISOString();
+    } else if (d != null && String(d).trim() !== "") {
+      dateStr = String(d);
+    } else {
+      dateStr = new Date().toISOString();
+    }
+    results.push({
+      id: String(resRows[i][0]),
+      user_id: String(resRows[i][1]),
+      category: String(resRows[i][2]),
+      score: Number(resRows[i][3]),
+      date: dateStr
+    });
+  }
+
+  return { success: true, user_id: uid, responses: responses, results: results };
 }
 
 /**
@@ -629,10 +767,11 @@ function getAdminAnalytics() {
     var name = userMap[userId].name;
     var anonymized = anonymizeName(name);
     return {
+      userId: userId,
       alumni: anonymized,
       course: userMap[userId].course,
       competencyScore: avg,
-      performanceLevel: avg >= 4 ? "High Proficiency" : "Emerging Proficiency"
+      performanceLevel: avg >= 3 ? "High Proficiency" : "Emerging Proficiency"
     };
   });
 

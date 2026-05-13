@@ -84,6 +84,20 @@
       <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
       <section class="workspace">
+        <div
+          id="workspaceLoadingOverlay"
+          class="workspace-loading-overlay workspace-loading-overlay--visible"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-hidden="false"
+        >
+          <div class="workspace-loading-card">
+            <div class="workspace-loading-spinner" aria-hidden="true"></div>
+            <p class="workspace-loading-title">Loading your workspace</p>
+            <p class="workspace-loading-sub">Checking your session and loading dashboard data. This may take a few seconds after sign-in.</p>
+          </div>
+        </div>
         <header class="topbar topbar--home">
           <div class="top-search">
             <label class="visually-hidden" for="globalSearch">Search</label>
@@ -198,7 +212,7 @@
                 <div class="wizard-panel-inner">
                   <h3 id="wiz-skill-3" class="wizard-step-title">Results</h3>
                   <p class="wizard-step-desc">
-                    Category means (1–4 scale), overall mean, charts, and projected program or major fit based on your profile.
+                    Category means on a 1–4 rubric (shown as mean / 4.00), recommendations, and improvement notes based on your profile.
                   </p>
                   <article class="card card--recommend" id="recommendationCard">
                     <h4 class="card-heading">Recommendations</h4>
@@ -206,22 +220,28 @@
                       Submit your assessment to see best-fit program and major suggestions.
                     </div>
                   </article>
-                  <div class="results-grid">
+                  <article class="card card--coach hidden" id="skillWizardCoachCard">
+                    <h4 class="card-heading">What to improve next</h4>
+                    <p class="field-hint" style="margin-top:0">Based on your category means (same notes as on your dashboard).</p>
+                    <ul id="skillWizardCoachList" class="dashboard-coach-list"></ul>
+                  </article>
+                  <div class="results-grid results-grid--scores-only">
                     <article class="card card--scores">
                       <h4 class="card-heading">Scores by category</h4>
                       <div id="scoreCards" class="cards-inline cards-inline--stack muted">No scores yet. Complete the assessment first.</div>
                     </article>
-                    <article class="card card--charts">
-                      <h4 class="card-heading">Distribution</h4>
-                      <div class="chart-row">
-                        <canvas id="alumniBarChart" width="420" height="220"></canvas>
-                        <canvas id="alumniRadarChart" width="420" height="220"></canvas>
-                      </div>
-                    </article>
+                  </div>
+                  <div id="wizardPrintSummaryBlock" class="wizard-print-summary-block hidden no-print">
+                    <p class="wizard-print-summary-block__hint muted">
+                      Pulls the latest saved results from the server (when connected), then opens your browser print dialog using the same summary as the printable results page.
+                    </p>
+                    <button type="button" class="primary ripple" id="openPrintableResultsBtn">Print official summary</button>
                   </div>
                   <div class="step-actions step-actions--split">
                     <button type="button" class="ghost ripple wizard-back" data-prev="2">Back</button>
-                    <button type="button" class="primary ripple wizard-jump-dashboard">Return to dashboard</button>
+                    <div class="step-actions__cluster">
+                      <button type="button" class="primary ripple wizard-jump-dashboard">Return to dashboard</button>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -246,7 +266,7 @@
                 <h3 class="card-heading">Flow</h3>
                 <ol class="list-prose list-prose--numbered">
                   <li>Use <strong>Test your skill</strong> to complete the scenario questionnaire.</li>
-                  <li>Scores aggregate by skill category.</li>
+                  <li>After your official run, open <strong>Test your skill</strong> → <strong>Results</strong> to review scores, then <strong>Print official summary</strong> for a formal record.</li>
                   <li>Results persist via your institutional backend when connected.</li>
                 </ol>
               </article>

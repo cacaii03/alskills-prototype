@@ -2,6 +2,13 @@
 
 const PAGE = document.body.dataset.page || "auth";
 const ALSKILL_USER_KEY = "alskill_user";
+const ALSKILL_SESSION_KEY = "alskill_session_v1";
+/** End session after this much inactivity (client guard). */
+const SESSION_IDLE_MS = 45 * 60 * 1000;
+/** Hard cap for client-side session envelope (demo and upper bound for remote). */
+const SESSION_CLIENT_MAX_MS = 24 * 60 * 60 * 1000;
+/** Aligns with Apps Script CacheService max session TTL (6 hours). */
+const REMOTE_SESSION_MAX_MS = 21600 * 1000;
 
 /**
  * Google Apps Script Web App: Deploy → Web app → copy the …/exec URL here.
@@ -72,6 +79,40 @@ const state = {
 /** Session flag plus stored responses/results imply one official 30-question attempt completed. */
 const OFFICIAL_ATTEMPT_STORAGE_PREFIX = "alskill_official_attempt_v1_";
 const LAST_ASSESSMENT_TRACK_PREFIX = "alskill_last_assessment_track_v1_";
+const RESULTS_WIZARD_VIEWED_PREFIX = "alskill_results_wizard_viewed_v1_";
+
+/** Category / overall means on the 1–4 rubric shown as `3.25 / 4.00`. */
+function formatRubricOverFour(val) {
+  if (val == null || Number.isNaN(Number(val))) return "— / 4.00";
+  return `${Number(val).toFixed(2)} / 4.00`;
+}
+
+function markResultsWizardViewed(uid) {
+  if (!uid) return;
+  try {
+    window.sessionStorage.setItem(RESULTS_WIZARD_VIEWED_PREFIX + uid, "1");
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function hasViewedResultsWizard(uid) {
+  if (!uid) return false;
+  try {
+    return !!window.sessionStorage.getItem(RESULTS_WIZARD_VIEWED_PREFIX + uid);
+  } catch (e) {
+    return false;
+  }
+}
+
+function updateWizardPrintSummaryVisibility() {
+  if (PAGE !== "home" || !state.currentUser) return;
+  const uid = state.currentUser.user_id;
+  const locked = hasOfficialAttemptDone(uid);
+  const viewed = hasViewedResultsWizard(uid);
+  const block = document.getElementById("wizardPrintSummaryBlock");
+  if (block) block.classList.toggle("hidden", !(locked && viewed));
+}
 
 function hasOfficialAttemptDone(uid) {
   if (!uid) return false;
@@ -128,6 +169,416 @@ function getRankTier(overallNum) {
   return { key: "master", label: "Masterclass", blurb: "Top-band performance across categories.", cls: "game-rank--master" };
 }
 
+function buildPerformanceLevelLabel(overallNum) {
+  if (overallNum == null || Number.isNaN(Number(overallNum))) return "Not recorded";
+  return Number(overallNum) >= 3 ? "High Proficiency" : "Emerging Proficiency";
+}
+
+function buildImprovementFeedbackParagraphs(scoreMap, overallNum) {
+  const entries = Object.entries(scoreMap).map(([cat, v]) => [cat, Number(v)]);
+  entries.sort((a, b) => a[1] - b[1]);
+  const weakest = entries.filter(([, v]) => v < 3.25);
+  const strongest = entries
+    .filter(([, v]) => v >= 3.25)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 1);
+
+  const lines = [];
+  const o = overallNum == null || Number.isNaN(Number(overallNum)) ? null : Number(overallNum);
+
+  if (o != null && o < 2.5) {
+    lines.push(
+      "Overall signals indicate foundational gaps across the scenario rubric. Prioritize reflective practice on realistic decision points and seek structured coaching or mentorship aligned with your program competencies."
+    );
+  } else if (o != null && o < 3) {
+    lines.push(
+      "Your aggregate score sits in the development band. Focused rehearsal on the categories listed below, paired with feedback from supervisors or peers, will help lift consistency before the next formal review."
+    );
+  } else if (o != null && o < 3.5) {
+    lines.push(
+      "Performance is solid in several dimensions but uneven. Concentrate study time on the lowest-mean categories so judgement stays reliable under pressure and across diverse scenarios."
+    );
+  } else {
+    lines.push(
+      "You are operating above cohort norms in aggregate. Maintain rigor through cross-training categories that are merely adequate, and document exemplar decisions so others can learn from your judgement patterns."
+    );
+  }
+
+  if (weakest.length) {
+    const cats = weakest.map(([c]) => c).join(", ");
+    lines.push(
+      `Target improvement in: ${cats}. Review item-level rationale, compare against high-scoring exemplars, and rehearse alternative responses until the preferred judgement path feels automatic.`
+    );
+  } else {
+    lines.push(
+      "No category fell sharply below the development boundary. Keep sharpening edge cases within your lowest relative means even when all bands look healthy."
+    );
+  }
+
+  if (strongest.length && entries.length > 1) {
+    const top = strongest[0];
+    lines.push(
+      `Relative strength: ${top[0]} (mean ${top[1].toFixed(2)}). Leverage this strength when tackling complex tasks that draw on similar cognitive habits.`
+    );
+  }
+
+  return lines;
+}
+
+/**
+ * Short, actionable bullets for the alumni dashboard (after scores exist).
+ */
+function buildDashboardImprovementBullets(scoreMap, overallNum) {
+  const bullets = [];
+  if (!scoreMap || Object.keys(scoreMap).length === 0) return bullets;
+  const entries = Object.entries(scoreMap)
+    .map(([cat, v]) => [cat, Number(v)])
+    .filter(([, v]) => !Number.isNaN(v));
+  if (entries.length === 0) return bullets;
+  entries.sort((a, b) => a[1] - b[1]);
+  const weak = entries.filter(([, v]) => v < 3.25);
+  const o = overallNum == null || Number.isNaN(Number(overallNum)) ? null : Number(overallNum);
+
+  if (o != null && o < 2.5) {
+    bullets.push(
+      "Overall is in the foundation band — repeat the scenario set slowly, one category at a time, and note why each best answer fits."
+    );
+  } else if (o != null && o < 3) {
+    bullets.push(
+      "Overall is still in the development band — prioritize the weakest categories below before adding new material."
+    );
+  } else if (o != null && o < 3.5) {
+    bullets.push(
+      "You are close to a strong profile — tighten consistency on the lowest categories so judgement holds under time pressure."
+    );
+  } else {
+    bullets.push("Strong aggregate — keep pressure-testing the categories at the bottom of your list so there is no hidden gap.");
+  }
+
+  weak.slice(0, 3).forEach(([cat, val]) => {
+    bullets.push(
+      `Improve ${cat} (mean ${val.toFixed(2)}) — redo related items, compare with higher-scoring rationale, and rehearse until the preferred choice feels obvious.`
+    );
+  });
+
+  if (weak.length === 0 && entries.length > 1) {
+    const [cat, val] = entries[0];
+    bullets.push(
+      `Relative focus: ${cat} (${val.toFixed(2)}) — even solid scores benefit from one more pass on edge-case prompts in this area.`
+    );
+  }
+
+  return bullets.slice(0, 6);
+}
+
+function chartScaleMaxFromEntries(entries) {
+  const vals = entries.map(([, v]) => Number(v)).filter((n) => !Number.isNaN(n));
+  const hi = vals.length ? Math.max(...vals) : 4;
+  return Math.max(4, hi, 0.01);
+}
+
+function setupAlumniChartSurface(canvas) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const wrap = canvas.parentElement;
+  const lw = Math.max(260, Math.min(640, Math.floor((wrap && wrap.clientWidth) || canvas.clientWidth || 400)));
+  const lh = 280;
+  canvas.style.width = `${lw}px`;
+  canvas.style.height = `${lh}px`;
+  canvas.width = Math.floor(lw * dpr);
+  canvas.height = Math.floor(lh * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { ctx: null, lw, lh };
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, lw, lh);
+  return { ctx, lw, lh };
+}
+
+/** Resolve `filename` next to the current page so links work in subfolders and static hosts (avoids broken relative navigations). */
+function resolveSiblingPageHref(filename) {
+  return new URL(filename, window.location.href).href.split("#")[0];
+}
+
+function buildAssessmentResultsHref(subjectUserId) {
+  const base = `${resolveSiblingPageHref("assessment-results.html")}?user=${encodeURIComponent(subjectUserId)}`;
+  if (window.location.protocol === "file:" && state.currentUser) {
+    return base + userToHashFragment(state.currentUser);
+  }
+  return base;
+}
+
+function knownAssessmentTrackKeys() {
+  if (typeof ALSKILL_TRACK_CATEGORY_NAMES === "object" && ALSKILL_TRACK_CATEGORY_NAMES) {
+    return Object.keys(ALSKILL_TRACK_CATEGORY_NAMES);
+  }
+  return ["BSCT", "BSBA:MM", "BSBA:OM", "BSBA:FM", "BSED:EN", "BSED:MA", "BECED", "BEED"];
+}
+
+/** Map legacy `question_id` prefix to the catalog track used to build items. */
+function inferTrackKeyFromQuestionId(questionId) {
+  const qid = String(questionId || "");
+  for (const tk of knownAssessmentTrackKeys()) {
+    const safe = tk.replace(/:/g, "_");
+    if (qid.startsWith(safe + "_c")) return tk;
+  }
+  return "";
+}
+
+/**
+ * HTML fragment for printable results: per-item Correct / Wrong only (no stems or keys).
+ * "Correct" = response score equals the highest rubric anchor for that catalog item.
+ */
+function buildAnonymousItemOutcomesSectionHtml(userId) {
+  const uid = String(userId || "");
+  const userResponses = state.responses.filter((r) => String(r.user_id) === uid);
+  if (userResponses.length === 0) {
+    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">No per-item response record is on file for this learner.</p>`;
+  }
+  if (typeof alsGetQuestionsForTrack !== "function") {
+    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">Item outcomes require the assessment catalog (reload the page or open results from the alumni workspace).</p>`;
+  }
+  const trackKey = inferTrackKeyFromQuestionId(userResponses[0].question_id);
+  if (!trackKey) {
+    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">Recorded question identifiers do not match the current catalog layout.</p>`;
+  }
+  const catalogQs = alsGetQuestionsForTrack(trackKey);
+  const maxByQuestionId = new Map();
+  catalogQs.forEach((q) => {
+    const scores = (q.choices || []).map((c) => Number(c.score)).filter((n) => !Number.isNaN(n));
+    maxByQuestionId.set(q.id, scores.length ? Math.max(...scores) : null);
+  });
+
+  function parseOrder(qid) {
+    const m = String(qid).match(/_c(\d+)_q(\d+)$/);
+    if (m) return [Number(m[1]), Number(m[2])];
+    return [9999, 9999];
+  }
+
+  const graded = [];
+  let skipped = 0;
+  userResponses.forEach((r) => {
+    const qid = String(r.question_id || "");
+    const maxS = maxByQuestionId.get(qid);
+    const sc = Number(r.score);
+    if (maxS == null || Number.isNaN(sc)) {
+      skipped += 1;
+      return;
+    }
+    const correct = sc >= maxS - 1e-9;
+    graded.push({
+      ordKey: parseOrder(qid),
+      outcome: correct ? "Correct" : "Wrong",
+      cls: correct ? "results-outcome-cell--correct" : "results-outcome-cell--wrong"
+    });
+  });
+  graded.sort((a, b) => a.ordKey[0] - b.ordKey[0] || a.ordKey[1] - b.ordKey[1]);
+
+  if (graded.length === 0) {
+    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">No items could be matched to the scoring key${
+      skipped ? ` (${skipped} raw row${skipped === 1 ? "" : "s"} skipped)` : ""
+    }.</p>`;
+  }
+
+  let correct = 0;
+  let wrong = 0;
+  graded.forEach((row) => {
+    if (row.outcome === "Correct") correct += 1;
+    else wrong += 1;
+  });
+
+  const tableRows = graded
+    .map((row, idx) => {
+      const n = idx + 1;
+      return `<tr><td class="results-outcome-ix">${n}</td><td class="${row.cls}">${escapeHtml(row.outcome)}</td></tr>`;
+    })
+    .join("");
+
+  const skipNote =
+    skipped > 0
+      ? `<p class="results-anon-note muted">${skipped} stored row${skipped === 1 ? "" : "s"} could not be matched to the catalog and ${skipped === 1 ? "was" : "were"} omitted from this table.</p>`
+      : "";
+
+  return `
+      <h2 class="results-doc__block-title">Scenario item outcomes</h2>
+      <p class="results-anon-lede">Scenario text and answer wording are omitted to protect the item bank. Rows are official items in assessment order. Outcomes are labeled <strong>Correct</strong> or <strong>Wrong</strong> only: <strong>Correct</strong> means your recorded score reached the highest rubric anchor for that item; otherwise <strong>Wrong</strong>.</p>
+      <div class="results-outcome-summary">
+        <span><strong>${correct}</strong> correct</span>
+        <span class="results-outcome-summary__sep" aria-hidden="true">·</span>
+        <span><strong>${wrong}</strong> wrong</span>
+        <span class="results-outcome-summary__sep" aria-hidden="true">·</span>
+        <span class="muted">${graded.length} items in table</span>
+      </div>
+      ${skipNote}
+      <div class="results-outcome-table-wrap">
+        <table class="results-outcome-table" aria-label="Item outcomes without question text">
+          <thead><tr><th scope="col">Item</th><th scope="col">Outcome</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>`;
+}
+
+/**
+ * Full printable <article> HTML for one subject (shared by assessment-results page and alumni inline print).
+ */
+function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overall) {
+  const tier = getRankTier(overall);
+  const level = buildPerformanceLevelLabel(overall);
+  const feedbackParas = buildImprovementFeedbackParagraphs(scores, overall);
+  const categoriesHtml = Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([cat, val]) =>
+        `<li><span class="results-cat-name">${escapeHtml(cat)}</span><span class="results-cat-score">${formatRubricOverFour(val)}</span></li>`
+    )
+    .join("");
+  const feedbackHtml = feedbackParas.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
+  const improveBullets = buildDashboardImprovementBullets(scores, overall);
+  const improveNextHtml =
+    improveBullets.length === 0
+      ? ""
+      : `<h2 class="results-doc__block-title">What to improve next</h2>
+      <div class="results-improve-wrap">
+        <ul class="results-improve-list">
+          ${improveBullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
+        </ul>
+      </div>`;
+  const itemOutcomesHtml = buildAnonymousItemOutcomesSectionHtml(subjectId);
+  const majorDisplay =
+    subjectUser.major && String(subjectUser.major).trim() && subjectUser.major !== "-"
+      ? String(subjectUser.major)
+      : "—";
+  const identityHtml = `
+      <dl class="results-doc__identity">
+        <div><dt>Email</dt><dd>${escapeHtml(String(subjectUser.email || "").trim() || "—")}</dd></div>
+        <div><dt>Program</dt><dd>${escapeHtml(String(subjectUser.course || "—"))}</dd></div>
+        <div><dt>Major</dt><dd>${escapeHtml(majorDisplay)}</dd></div>
+        <div><dt>Batch</dt><dd>${escapeHtml(String(subjectUser.batch))}</dd></div>
+      </dl>`;
+
+  return `
+    <article class="results-doc">
+      <p class="results-doc__eyebrow">Skill assessment summary</p>
+      <h1 class="results-doc__title">${escapeHtml(subjectUser.name)}</h1>
+      <p class="results-doc__meta">ALSKILL · Official scenario benchmark · Category means shown as <strong>mean / 4.00</strong></p>
+      ${identityHtml}
+      <div class="results-doc__grid">
+        <div class="results-stat">
+          <p class="results-stat__label">Rating</p>
+          <p class="results-stat__value">${escapeHtml(tier.label)}</p>
+          <p class="results-stat__hint">${escapeHtml(tier.blurb)}</p>
+        </div>
+        <div class="results-stat">
+          <p class="results-stat__label">Final score</p>
+          <p class="results-stat__value">${formatRubricOverFour(overall)}</p>
+          <p class="results-stat__hint">Mean of category means (rubric high 4.00)</p>
+        </div>
+        <div class="results-stat">
+          <p class="results-stat__label">Proficiency band</p>
+          <p class="results-stat__value">${escapeHtml(level)}</p>
+          <p class="results-stat__hint">Institutional label</p>
+        </div>
+      </div>
+      <h2 class="results-doc__block-title">Comments and improvement focus</h2>
+      <div class="results-feedback">${feedbackHtml}</div>
+      ${improveNextHtml}
+      <h2 class="results-doc__block-title">Category breakdown</h2>
+      <ul class="results-categories">${categoriesHtml}</ul>
+      ${itemOutcomesHtml}
+      <footer class="results-doc__footer">ALSKILL · ${escapeHtml(
+        new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
+      )} · Benchmark reflects the official scenario assessment.</footer>
+    </article>`;
+}
+
+const INLINE_PRINT_HOST_ID = "alskill-inline-print-host";
+
+function runInlinePrintFromResultsHtml(articleHtml) {
+  if (PAGE !== "home") return;
+  let host = document.getElementById(INLINE_PRINT_HOST_ID);
+  if (!host) {
+    host = document.createElement("div");
+    host.id = INLINE_PRINT_HOST_ID;
+    document.body.appendChild(host);
+  }
+  host.innerHTML = `<div class="results-print-root results-print-root--inline">${articleHtml}</div>`;
+  host.classList.add("is-active");
+  document.body.classList.add("alskill-printing-results");
+  let finished = false;
+  let failSafeId = null;
+  const cleanup = () => {
+    if (finished) return;
+    finished = true;
+    if (failSafeId != null) {
+      window.clearTimeout(failSafeId);
+      failSafeId = null;
+    }
+    document.body.classList.remove("alskill-printing-results");
+    host.classList.remove("is-active");
+    host.innerHTML = "";
+  };
+  failSafeId = window.setTimeout(cleanup, 12000);
+  window.addEventListener("afterprint", cleanup, { once: true });
+  window.requestAnimationFrame(() => {
+    try {
+      window.print();
+    } catch (e) {
+      cleanup();
+    }
+  });
+}
+
+async function openAlumniPrintableResultsPage() {
+  if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Alumni") {
+    showHomeToast("Sign in as an alumni user to open your summary.", "error");
+    return;
+  }
+  const uid = state.currentUser.user_id;
+  if (!hasOfficialAttemptDone(uid)) {
+    showHomeToast("Printable results unlock after you finish your official assessment.", "error");
+    return;
+  }
+  if (!hasViewedResultsWizard(uid)) {
+    showHomeToast("Open your results in Test your skill (step 3), review your scores, then use Print official summary.", "error");
+    return;
+  }
+  try {
+    if (USE_REMOTE_API) {
+      await fetchAndMergeUserAssessmentData(uid);
+    }
+    hydrateScoresFromStoredResults(uid);
+  } catch {
+    hydrateScoresFromStoredResults(uid);
+  }
+  if (!state.lastComputedScores || Object.keys(state.lastComputedScores).length === 0) {
+    showHomeToast("No scored results to print yet. Try again in a moment.", "error");
+    return;
+  }
+  const fromList = state.users.find((u) => String(u.user_id) === String(uid));
+  const subjectUser = fromList ? Object.assign({}, fromList, state.currentUser) : state.currentUser;
+  const html = buildAssessmentResultsArticleHtml(
+    subjectUser,
+    uid,
+    state.lastComputedScores,
+    state.lastComputedOverall
+  );
+  runInlinePrintFromResultsHtml(html);
+}
+
+function adminDashboardHrefFromResults() {
+  const base = resolveSiblingPageHref("admin-dashboard.html");
+  if (window.location.protocol === "file:" && state.currentUser) {
+    return base + userToHashFragment(state.currentUser);
+  }
+  return base;
+}
+
+function homeWorkspaceHrefFromResults() {
+  const base = resolveSiblingPageHref("home.html");
+  if (window.location.protocol === "file:" && state.currentUser) {
+    return base + userToHashFragment(state.currentUser);
+  }
+  return base;
+}
+
 function applyAssessmentLockUI() {
   if (PAGE !== "home" || !state.currentUser) return;
   const uid = state.currentUser.user_id;
@@ -167,6 +618,8 @@ function applyAssessmentLockUI() {
 
   const navSkillMeta = document.querySelector('.nav-btn[data-section="skillTestSection"] .nav-btn-meta');
   if (navSkillMeta) navSkillMeta.textContent = locked ? "Results saved" : "One official attempt";
+
+  updateWizardPrintSummaryVisibility();
 }
 
 function bindAssessmentLockActions() {
@@ -175,37 +628,27 @@ function bindAssessmentLockActions() {
   btn.addEventListener("click", () => {
     const uid = state.currentUser && state.currentUser.user_id;
     if (!uid) return;
-    hydrateScoresFromStoredResults(uid);
-    const scores = state.lastComputedScores;
-    if (!scores || Object.keys(scores).length === 0) {
-      showHomeToast("No scored results found yet.", "error");
-      return;
-    }
-    let track = state.currentTrackKey;
-    try {
-      const stored = window.sessionStorage.getItem(LAST_ASSESSMENT_TRACK_PREFIX + uid);
-      if (stored) track = stored;
-    } catch (e) {
-      /* ignore */
-    }
-    if (track) state.currentTrackKey = track;
-    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
-    const skillNav = document.querySelector('.nav-btn[data-section="skillTestSection"]');
-    if (skillNav) skillNav.classList.add("active");
-    showSection("skillTestSection");
-    setHomeWizardStep(3);
-    renderScoreCards(scores);
-    drawAlumniCharts(scores);
-    if (typeof alsRecommend === "function" && track) {
-      applyRecommendationFromScores(scores, track);
-    }
-    closeMobileSidebar();
+    void (async () => {
+      await openSkillResultsIfLocked();
+      if (!state.lastComputedScores || Object.keys(state.lastComputedScores).length === 0) {
+        showHomeToast("No scored results found yet.", "error");
+        return;
+      }
+      document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
+      const skillNav = document.querySelector('.nav-btn[data-section="skillTestSection"]');
+      if (skillNav) skillNav.classList.add("active");
+      showSection("skillTestSection");
+      closeMobileSidebar();
+    })();
   });
 }
 
-function openSkillResultsIfLocked() {
+async function openSkillResultsIfLocked() {
   if (!state.currentUser || !hasOfficialAttemptDone(state.currentUser.user_id)) return;
   const uid = state.currentUser.user_id;
+  if (USE_REMOTE_API) {
+    await fetchAndMergeUserAssessmentData(uid);
+  }
   hydrateScoresFromStoredResults(uid);
   if (!state.lastComputedScores || Object.keys(state.lastComputedScores).length === 0) return;
   try {
@@ -216,10 +659,10 @@ function openSkillResultsIfLocked() {
   }
   setHomeWizardStep(3);
   renderScoreCards(state.lastComputedScores);
-  drawAlumniCharts(state.lastComputedScores);
   if (typeof alsRecommend === "function" && state.currentTrackKey) {
     applyRecommendationFromScores(state.lastComputedScores, state.currentTrackKey);
   }
+  if (PAGE === "home") renderAlumniKpis();
 }
 
 const DEMO_DB = {
@@ -270,14 +713,172 @@ function applyUserFromAuth(user) {
   return Object.assign({}, user, { role: normalizeRole(user.role) });
 }
 
+function stripSensitiveUser(user) {
+  if (!user || typeof user !== "object") return user;
+  const o = Object.assign({}, user);
+  delete o.password;
+  return o;
+}
+
+function buildSessionEnvelope(user, sessionToken, sessionMaxAgeSec) {
+  const now = Date.now();
+  const hasRemote = !!(sessionToken && USE_REMOTE_API);
+  const serverCap = hasRemote
+    ? Math.min((Number(sessionMaxAgeSec) || 21600) * 1000, REMOTE_SESSION_MAX_MS)
+    : SESSION_CLIENT_MAX_MS;
+  return {
+    v: 1,
+    user: stripSensitiveUser(applyUserFromAuth(user)),
+    sessionToken: hasRemote ? String(sessionToken) : null,
+    createdAt: now,
+    lastActivityAt: now,
+    clientExpiresAt: now + Math.min(serverCap, SESSION_CLIENT_MAX_MS)
+  };
+}
+
+function persistSessionEnvelope(envelope) {
+  try {
+    sessionStorage.setItem(ALSKILL_SESSION_KEY, JSON.stringify(envelope));
+    sessionStorage.removeItem(ALSKILL_USER_KEY);
+  } catch (e) {
+    /* ignore quota / private mode */
+  }
+}
+
+function readSessionEnvelopeFromStorage() {
+  try {
+    const raw = sessionStorage.getItem(ALSKILL_SESSION_KEY);
+    if (raw) {
+      const env = JSON.parse(raw);
+      if (env && env.user && env.user.user_id) return env;
+    }
+    const legacy = sessionStorage.getItem(ALSKILL_USER_KEY);
+    if (legacy) {
+      const user = applyUserFromAuth(JSON.parse(legacy));
+      if (user && user.user_id) {
+        const env = buildSessionEnvelope(user, null, null);
+        persistSessionEnvelope(env);
+        return env;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function clearAllSessionStorage() {
+  try {
+    sessionStorage.removeItem(ALSKILL_SESSION_KEY);
+    sessionStorage.removeItem(ALSKILL_USER_KEY);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+let _sessionTouchTimer = 0;
+function touchSessionActivityThrottled() {
+  const now = Date.now();
+  if (now - _sessionTouchTimer < 45000) return;
+  _sessionTouchTimer = now;
+  const env = readSessionEnvelopeFromStorage();
+  if (!env || !env.user) return;
+  env.lastActivityAt = now;
+  try {
+    sessionStorage.setItem(ALSKILL_SESSION_KEY, JSON.stringify(env));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+/**
+ * Validates stored session (idle, expiry, optional remote token) before protected pages run.
+ * @param {string|null} expectedRole "Alumni" | "Admin" | null (any signed-in user)
+ */
+async function reconcileSessionAtStartup(expectedRole) {
+  const fromHashUser = tryConsumeUserFromHash();
+  if (fromHashUser) {
+    let u = applyUserFromAuth(fromHashUser);
+    if (expectedRole != null && normalizeRole(u.role) !== normalizeRole(expectedRole)) {
+      clearAllSessionStorage();
+      return { ok: false, reason: "role" };
+    }
+    if (USE_REMOTE_API) {
+      const envAfter = readSessionEnvelopeFromStorage();
+      if (envAfter && envAfter.sessionToken) {
+        try {
+          const res = await apiGet("validateSession", { session_token: envAfter.sessionToken });
+          if (!res || res.success === false || !res.user) {
+            clearAllSessionStorage();
+            return { ok: false, reason: "remote" };
+          }
+          u = stripSensitiveUser(applyUserFromAuth(res.user));
+          envAfter.user = u;
+          const capMs = Math.min((Number(res.sessionMaxAgeSec) || 21600) * 1000, REMOTE_SESSION_MAX_MS);
+          envAfter.clientExpiresAt = Math.min(Date.now() + capMs, (envAfter.createdAt || Date.now()) + SESSION_CLIENT_MAX_MS);
+          envAfter.lastActivityAt = Date.now();
+          persistSessionEnvelope(envAfter);
+        } catch {
+          /* Offline / transient error: keep local session so reload does not brick the UI */
+          envAfter.lastActivityAt = Date.now();
+          persistSessionEnvelope(envAfter);
+        }
+      }
+    }
+    return { ok: true, user: u };
+  }
+  const env = readSessionEnvelopeFromStorage();
+  if (!env || !env.user) {
+    return { ok: false, reason: "missing" };
+  }
+  if (expectedRole != null && normalizeRole(env.user.role) !== normalizeRole(expectedRole)) {
+    return { ok: false, reason: "role" };
+  }
+  if (Date.now() > env.clientExpiresAt) {
+    clearAllSessionStorage();
+    return { ok: false, reason: "expired" };
+  }
+  if (Date.now() - env.lastActivityAt > SESSION_IDLE_MS) {
+    clearAllSessionStorage();
+    return { ok: false, reason: "idle" };
+  }
+  if (USE_REMOTE_API && env.sessionToken) {
+    try {
+      const res = await apiGet("validateSession", { session_token: env.sessionToken });
+      if (!res || res.success === false || !res.user) {
+        clearAllSessionStorage();
+        return { ok: false, reason: "remote" };
+      }
+      env.user = stripSensitiveUser(applyUserFromAuth(res.user));
+      const capMs = Math.min((Number(res.sessionMaxAgeSec) || 21600) * 1000, REMOTE_SESSION_MAX_MS);
+      env.clientExpiresAt = Math.min(Date.now() + capMs, (env.createdAt || Date.now()) + SESSION_CLIENT_MAX_MS);
+    } catch {
+      /* Keep cached profile when the network hiccups on reload */
+    }
+  }
+  env.lastActivityAt = Date.now();
+  persistSessionEnvelope(env);
+  return { ok: true, user: applyUserFromAuth(env.user) };
+}
+
 const USER_HASH_PREFIX = "#alskill=";
 
 /**
  * file:// pages are different opaque origins, so sessionStorage does not carry
- * between index.html and home.html. For file: we pass a one-time user payload in the hash.
+ * between index.html and home.html. For file: we pass a one-time payload in the hash.
+ * Payload may be a bare user object (legacy) or { user, sessionToken, sessionMaxAgeSec } for remote sessions.
  */
-function userToHashFragment(user) {
-  const json = JSON.stringify(user);
+function userToHashFragment(user, sessionExtra) {
+  const u = stripSensitiveUser(applyUserFromAuth(user));
+  const payload =
+    sessionExtra && (sessionExtra.sessionToken || sessionExtra.sessionMaxAgeSec)
+      ? {
+          user: u,
+          sessionToken: sessionExtra.sessionToken || null,
+          sessionMaxAgeSec: sessionExtra.sessionMaxAgeSec || 21600
+        }
+      : u;
+  const json = JSON.stringify(payload);
   const b64 = btoa(unescape(encodeURIComponent(json)));
   return USER_HASH_PREFIX + encodeURIComponent(b64);
 }
@@ -288,8 +889,20 @@ function tryConsumeUserFromHash() {
   try {
     const b64 = decodeURIComponent(h.slice(USER_HASH_PREFIX.length));
     const json = decodeURIComponent(escape(atob(b64)));
-    const user = applyUserFromAuth(JSON.parse(json));
-    sessionStorage.setItem(ALSKILL_USER_KEY, JSON.stringify(user));
+    const parsed = JSON.parse(json);
+    let user;
+    let sessionToken = null;
+    let sessionMaxAgeSec = null;
+    if (parsed && parsed.user && typeof parsed.user === "object" && parsed.user.user_id) {
+      user = applyUserFromAuth(parsed.user);
+      sessionToken = parsed.sessionToken || null;
+      sessionMaxAgeSec = parsed.sessionMaxAgeSec != null ? Number(parsed.sessionMaxAgeSec) : null;
+    } else if (parsed && parsed.user_id) {
+      user = applyUserFromAuth(parsed);
+    } else {
+      return null;
+    }
+    persistSessionEnvelope(buildSessionEnvelope(user, sessionToken, sessionMaxAgeSec));
     history.replaceState(null, "", window.location.href.split("#")[0]);
     return user;
   } catch {
@@ -297,42 +910,46 @@ function tryConsumeUserFromHash() {
   }
 }
 
-function loadUserFromSession() {
-  const fromHash = tryConsumeUserFromHash();
-  if (fromHash) return fromHash;
-  try {
-    const raw = sessionStorage.getItem(ALSKILL_USER_KEY);
-    if (!raw) return null;
-    return applyUserFromAuth(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
 function saveUserToSession(user) {
-  sessionStorage.setItem(ALSKILL_USER_KEY, JSON.stringify(user));
+  persistSessionEnvelope(buildSessionEnvelope(user, null, null));
 }
 
-function redirectAfterLogin() {
+function redirectAfterLogin(sessionExtra) {
   const user = state.currentUser;
   if (!user) return;
   const page = normalizeRole(user.role) === "Admin" ? "admin-dashboard.html" : "home.html";
   const targetUrl = new URL(page, window.location.href).href.split("#")[0];
   if (window.location.protocol === "file:") {
-    window.location.href = targetUrl + userToHashFragment(user);
+    window.location.href = targetUrl + userToHashFragment(user, sessionExtra);
     return;
   }
-  saveUserToSession(user);
-  window.location.href = page;
+  persistSessionEnvelope(
+    buildSessionEnvelope(
+      user,
+      sessionExtra && sessionExtra.sessionToken,
+      sessionExtra && sessionExtra.sessionMaxAgeSec
+    )
+  );
+  window.location.href = resolveSiblingPageHref(page);
 }
 
 function bindLogout() {
   const btn = document.getElementById("topLogoutBtn");
   if (!btn) return;
   btn.addEventListener("click", () => {
-    sessionStorage.removeItem(ALSKILL_USER_KEY);
-    state.currentUser = null;
-    window.location.href = "index.html";
+    void (async () => {
+      const env = readSessionEnvelopeFromStorage();
+      if (USE_REMOTE_API && env && env.sessionToken) {
+        try {
+          await apiPost("logoutSession", { session_token: env.sessionToken });
+        } catch {
+          /* still clear client */
+        }
+      }
+      clearAllSessionStorage();
+      state.currentUser = null;
+      window.location.href = resolveSiblingPageHref("index.html") + "?logout=1";
+    })();
   });
 }
 
@@ -346,58 +963,292 @@ function initAuthPage() {
   bindRegisterMajorField();
   bindShellInteractions();
   setAuthMode("login");
+  const params = new URLSearchParams(window.location.search);
+  const loginStatus = document.getElementById("loginStatus");
+  if (loginStatus && params.get("expired") === "1") {
+    loginStatus.textContent = "Your session expired or was signed out elsewhere. Please sign in again.";
+  } else if (loginStatus && params.get("logout") === "1") {
+    loginStatus.textContent = "You have been signed out.";
+  }
+}
+
+function setHomeWorkspaceLoading(visible) {
+  if (PAGE !== "home") return;
+  const el = document.getElementById("workspaceLoadingOverlay");
+  if (!el) return;
+  const on = !!visible;
+  el.classList.toggle("workspace-loading-overlay--visible", on);
+  el.setAttribute("aria-busy", on ? "true" : "false");
+  el.setAttribute("aria-hidden", on ? "false" : "true");
 }
 
 async function initHomePage() {
-  state.currentUser = loadUserFromSession();
-  if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Alumni") {
-    window.location.href = "index.html";
+  setHomeWorkspaceLoading(true);
+  const session = await reconcileSessionAtStartup("Alumni");
+  if (!session.ok) {
+    setHomeWorkspaceLoading(false);
+    const q =
+      session.reason === "expired" || session.reason === "idle" || session.reason === "remote"
+        ? "?expired=1"
+        : "";
+    window.location.href = resolveSiblingPageHref("index.html") + q;
     return;
   }
+  state.currentUser = session.user;
   state.users = [...DEMO_DB.users];
   state.questions = [...DEMO_DB.questions];
   state.responses = [...DEMO_DB.responses];
   state.results = [...DEMO_DB.results];
-  warmupRemote();
-  bindNavigation();
-  bindAlumniActions();
-  bindHomeWizard();
-  bindAdminActions();
-  bindShellInteractions();
-  bindLogout();
-  populateAssessmentPrograms();
-  hydrateScoresFromStoredResults(state.currentUser.user_id);
-  renderProfile();
-  renderAlumniKpis();
-  syncAssessmentSelectorsFromProfile();
-  bindAssessmentLockActions();
-  applyAssessmentLockUI();
-  showSection("alumniSection");
-  setActiveNav("alumniSection");
-  bindSkillSectionChrome();
-  updateSessionUI();
+  try {
+    try {
+      await warmupRemote();
+      if (USE_REMOTE_API && state.currentUser) {
+        try {
+          await fetchAndMergeUserAssessmentData(state.currentUser.user_id);
+        } catch {
+          /* network or parse error; dashboard still uses local demo slice */
+        }
+      }
+      hydrateScoresFromStoredResults(state.currentUser.user_id);
+      renderProfile();
+      renderAlumniKpis();
+    } catch (err) {
+      /* eslint-disable no-console */
+      console.error("ALSKILL: home data/render error", err);
+      /* eslint-enable no-console */
+      try {
+        showHomeToast("Some data could not be refreshed. Navigation still works — try again in a moment.", "error");
+      } catch {
+        /* ignore */
+      }
+    }
+    bindNavigation();
+    bindAlumniActions();
+    bindHomeWizard();
+    bindAdminActions();
+    bindShellInteractions();
+    bindLogout();
+    populateAssessmentPrograms();
+    syncAssessmentSelectorsFromProfile();
+    bindAssessmentLockActions();
+    applyAssessmentLockUI();
+    updateWizardPrintSummaryVisibility();
+    showSection("alumniSection");
+    setActiveNav("alumniSection");
+    bindSkillSectionChrome();
+    updateSessionUI();
+  } finally {
+    setHomeWorkspaceLoading(false);
+  }
 }
 
 async function initAdminPage() {
-  state.currentUser = loadUserFromSession();
-  if (!state.currentUser || normalizeRole(state.currentUser.role) !== "Admin") {
-    window.location.href = "index.html";
+  const session = await reconcileSessionAtStartup("Admin");
+  if (!session.ok) {
+    const q =
+      session.reason === "expired" || session.reason === "idle" || session.reason === "remote"
+        ? "?expired=1"
+        : "";
+    window.location.href = resolveSiblingPageHref("index.html") + q;
     return;
   }
+  state.currentUser = session.user;
   state.users = [...DEMO_DB.users];
   state.questions = [...DEMO_DB.questions];
   state.responses = [...DEMO_DB.responses];
   state.results = [...DEMO_DB.results];
-  warmupRemote();
+  try {
+    await warmupRemote({ adminAnalytics: true });
+    if (USE_REMOTE_API) await refreshAdminAnalytics();
+    else renderAdminDashboard();
+  } catch (err) {
+    /* eslint-disable no-console */
+    console.error("ALSKILL: admin dashboard error", err);
+    /* eslint-enable no-console */
+    renderAdminDashboard();
+  }
   bindAdminActions();
   bindShellInteractions();
   bindLogout();
-  if (USE_REMOTE_API) await refreshAdminAnalytics();
-  else renderAdminDashboard();
   updateSessionUI();
 }
 
+async function initResultsPage() {
+  const session = await reconcileSessionAtStartup(null);
+  if (!session.ok) {
+    window.location.href =
+      resolveSiblingPageHref("index.html") +
+      (session.reason === "expired" || session.reason === "idle" || session.reason === "remote"
+        ? "?expired=1"
+        : "");
+    return;
+  }
+  const me = session.user;
+  state.currentUser = me;
+  state.users = [...DEMO_DB.users];
+  state.questions = [...DEMO_DB.questions];
+  state.responses = [...DEMO_DB.responses];
+  state.results = [...DEMO_DB.results];
+  try {
+    await warmupRemote();
+  } catch (err) {
+    /* eslint-disable no-console */
+    console.error("ALSKILL: results warmup error", err);
+    /* eslint-enable no-console */
+  }
+  bindShellInteractions();
+  bindLogout();
+  bindResultsPageChrome();
+
+  const role = normalizeRole(me.role);
+  const params = new URLSearchParams(window.location.search);
+  const queryUser = params.get("user");
+  let subjectId = null;
+  if (role === "Admin") {
+    subjectId = queryUser ? String(queryUser).trim() : null;
+  } else {
+    subjectId = me.user_id;
+    if (queryUser && String(queryUser).trim() !== me.user_id) {
+      document.getElementById("resultsRoot").innerHTML = `
+        <article class="results-doc">
+          <p class="muted">You can only view your own assessment results.</p>
+          <p><a class="results-back-link" href="${escapeHtml(homeWorkspaceHrefFromResults())}">Return to workspace</a></p>
+        </article>`;
+      const back = document.getElementById("resultsBackLink");
+      if (back) {
+        back.href = homeWorkspaceHrefFromResults();
+        back.textContent = "← Workspace";
+      }
+      const lab = document.getElementById("resultsSessionLabel");
+      if (lab) lab.textContent = `${me.name} (${me.role})`;
+      return;
+    }
+  }
+
+  if (!subjectId) {
+    document.getElementById("resultsRoot").innerHTML = `
+      <article class="results-doc">
+        <p class="results-doc__eyebrow">Evaluator</p>
+        <h1 class="results-doc__title">View results</h1>
+        <p class="results-doc__meta">Open a printable record from the alumni performance index using <strong>View results</strong> on a row, or add <code>?user=</code> and a user id to the URL.</p>
+        <p><a class="results-back-link" href="${escapeHtml(adminDashboardHrefFromResults())}">← Admin console</a></p>
+      </article>`;
+    const back = document.getElementById("resultsBackLink");
+    if (back) {
+      back.href = adminDashboardHrefFromResults();
+      back.textContent = "← Admin console";
+    }
+    const lab = document.getElementById("resultsSessionLabel");
+    if (lab) lab.textContent = `${me.name} (${me.role})`;
+    return;
+  }
+
+  const subjectUser = state.users.find((u) => u.user_id === subjectId);
+  if (!subjectUser || normalizeRole(subjectUser.role) !== "Alumni") {
+    document.getElementById("resultsRoot").innerHTML = `
+      <article class="results-doc">
+        <p class="muted">No alumni record found for this identifier.</p>
+        <p><a class="results-back-link" href="${escapeHtml(role === "Admin" ? adminDashboardHrefFromResults() : homeWorkspaceHrefFromResults())}">Go back</a></p>
+      </article>`;
+    const back = document.getElementById("resultsBackLink");
+    if (back) {
+      back.href = role === "Admin" ? adminDashboardHrefFromResults() : homeWorkspaceHrefFromResults();
+      back.textContent = role === "Admin" ? "← Admin console" : "← Workspace";
+    }
+    const lab = document.getElementById("resultsSessionLabel");
+    if (lab) lab.textContent = `${me.name} (${me.role})`;
+    return;
+  }
+
+  if (USE_REMOTE_API) {
+    try {
+      await fetchAndMergeUserAssessmentData(subjectId);
+    } catch {
+      /* network or parse error; fall back to local state */
+    }
+  }
+  hydrateScoresFromStoredResults(subjectId);
+  if (role === "Alumni" && subjectId === me.user_id && !hasOfficialAttemptDone(subjectId)) {
+    document.getElementById("resultsRoot").innerHTML = `
+      <article class="results-doc">
+        <p class="results-doc__eyebrow">Printable record</p>
+        <h1 class="results-doc__title">Not available yet</h1>
+        <p class="muted">Official printable results open after you complete the scenario benchmark in <strong>Test your skill</strong>.</p>
+        <p><a class="results-back-link" href="${escapeHtml(homeWorkspaceHrefFromResults())}">Return to workspace</a></p>
+      </article>`;
+    const back = document.getElementById("resultsBackLink");
+    if (back) {
+      back.href = homeWorkspaceHrefFromResults();
+      back.textContent = "← Workspace";
+    }
+    const lab = document.getElementById("resultsSessionLabel");
+    if (lab) lab.textContent = `${me.name} (${me.role})`;
+    return;
+  }
+  const scores = state.lastComputedScores;
+  const overall = state.lastComputedOverall;
+
+  if (!scores || Object.keys(scores).length === 0) {
+    document.getElementById("resultsRoot").innerHTML = `
+      <article class="results-doc">
+        <p class="muted">No scored assessment results are on file for <strong>${escapeHtml(subjectUser.name)}</strong>.</p>
+        <p><a class="results-back-link" href="${escapeHtml(role === "Admin" ? adminDashboardHrefFromResults() : homeWorkspaceHrefFromResults())}">Go back</a></p>
+      </article>`;
+    const back = document.getElementById("resultsBackLink");
+    if (back) {
+      back.href = role === "Admin" ? adminDashboardHrefFromResults() : homeWorkspaceHrefFromResults();
+      back.textContent = role === "Admin" ? "← Admin console" : "← Workspace";
+    }
+    const lab = document.getElementById("resultsSessionLabel");
+    if (lab) lab.textContent = `${me.name} (${me.role})`;
+    return;
+  }
+
+  document.getElementById("resultsRoot").innerHTML = buildAssessmentResultsArticleHtml(
+    subjectUser,
+    subjectId,
+    scores,
+    overall
+  );
+
+  const back = document.getElementById("resultsBackLink");
+  if (back) {
+    back.href = role === "Admin" ? adminDashboardHrefFromResults() : homeWorkspaceHrefFromResults();
+    back.textContent = role === "Admin" ? "← Admin console" : "← Workspace";
+  }
+  const lab = document.getElementById("resultsSessionLabel");
+  if (lab) lab.textContent = `${me.name} (${me.role})`;
+}
+
+function bindResultsPageChrome() {
+  const printBtn = document.getElementById("resultsPrintBtn");
+  if (printBtn) {
+    printBtn.addEventListener("click", () => window.print());
+  }
+  const back = document.getElementById("resultsBackLink");
+  if (back) {
+    back.href = resolveSiblingPageHref("home.html");
+  }
+}
+
 function bootstrap() {
+  window.addEventListener("pageshow", (ev) => {
+    if (!ev.persisted) return;
+    if (PAGE === "home") {
+      void (async () => {
+        const s = await reconcileSessionAtStartup("Alumni");
+        if (!s.ok) window.location.href = resolveSiblingPageHref("index.html") + "?expired=1";
+        else state.currentUser = s.user;
+      })();
+    } else if (PAGE === "admin") {
+      void (async () => {
+        const s = await reconcileSessionAtStartup("Admin");
+        if (!s.ok) window.location.href = resolveSiblingPageHref("index.html") + "?expired=1";
+        else state.currentUser = s.user;
+      })();
+    }
+  });
+
   if (PAGE === "home") {
     initHomePage();
     return;
@@ -406,51 +1257,102 @@ function bootstrap() {
     initAdminPage();
     return;
   }
+  if (PAGE === "results") {
+    initResultsPage();
+    return;
+  }
   initAuthPage();
 }
 
-async function warmupRemote() {
+async function warmupRemote(options) {
   if (!USE_REMOTE_API) return;
+  const opts = options && typeof options === "object" ? options : {};
+  const runAdminAnalytics = opts.adminAnalytics === true;
+
   try {
     await apiGet("initializeDatabase");
-    await hydrateQuestions();
-    await refreshAdminAnalytics();
   } catch {
     USE_REMOTE_API = false;
+    return;
+  }
+
+  if (runAdminAnalytics && document.getElementById("adminKpi")) {
+    try {
+      await refreshAdminAnalytics();
+    } catch {
+      /* admin charts optional; do not disable API for alumni */
+    }
   }
 }
 
 /**
- * Optional sync of legacy Questions sheet rows (does not overwrite client catalog questions).
+ * Replaces this user's rows in state.results / state.responses with data from the spreadsheet (remote API).
+ * Call after submit and on alumni home load so dashboards and locks reflect persisted data.
  */
-async function hydrateQuestions() {
-  if (!USE_REMOTE_API) return;
-  const courses = ["BSCT", "BSBA", "BSED", "BEED", "BECED"];
-  const all = [];
-  for (const course of courses) {
-    const res = await apiGet("fetchQuestions", { course });
-    if (res && res.success && Array.isArray(res.questions)) all.push(...res.questions);
+async function fetchAndMergeUserAssessmentData(userId) {
+  if (!USE_REMOTE_API || !userId) return false;
+  try {
+    const res = await apiGet("fetchUserAssessmentData", { user_id: userId });
+    if (!res || !res.success) return false;
+    const uid = String(userId);
+    state.results = state.results.filter((r) => String(r.user_id) !== uid);
+    state.responses = state.responses.filter((r) => String(r.user_id) !== uid);
+    if (Array.isArray(res.results)) {
+      res.results.forEach((row) => {
+        state.results.push({
+          id: row.id != null ? String(row.id) : "RES" + Math.random().toString(36).slice(2, 9),
+          user_id: row.user_id != null ? String(row.user_id) : uid,
+          category: String(row.category != null ? row.category : ""),
+          score: Number(row.score),
+          date: row.date != null ? String(row.date) : new Date().toISOString()
+        });
+      });
+    }
+    if (Array.isArray(res.responses)) {
+      res.responses.forEach((row) => {
+        state.responses.push({
+          id: row.id != null ? String(row.id) : "R" + Math.random().toString(36).slice(2, 9),
+          user_id: row.user_id != null ? String(row.user_id) : uid,
+          question_id: String(row.question_id != null ? row.question_id : ""),
+          answer: String(row.answer != null ? row.answer : ""),
+          score: Number(row.score),
+          category: row.category != null ? String(row.category) : ""
+        });
+      });
+    }
+    return true;
+  } catch {
+    return false;
   }
-  state.sheetQuestionsFallback = all;
 }
 
 function bindNavigation() {
+  if (PAGE !== "home") return;
+  if (document.body.dataset.alskillHomeNavBound === "1") return;
+  document.body.dataset.alskillHomeNavBound = "1";
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!canAccessSection(btn.dataset.section)) {
-        window.location.href = "index.html";
+        window.location.href = resolveSiblingPageHref("index.html");
         return;
       }
       document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       showSection(btn.dataset.section);
+      if (PAGE === "home" && btn.dataset.section === "alumniSection" && state.currentUser) {
+        if (normalizeRole(state.currentUser.role) === "Alumni") {
+          hydrateScoresFromStoredResults(state.currentUser.user_id);
+          renderAlumniKpis();
+        }
+      }
       if (PAGE === "home" && btn.dataset.section === "skillTestSection") {
         if (state.currentUser && hasOfficialAttemptDone(state.currentUser.user_id)) {
-          openSkillResultsIfLocked();
+          void openSkillResultsIfLocked();
         } else {
           setHomeWizardStep(1);
         }
       }
+      touchSessionActivityThrottled();
       closeMobileSidebar();
     });
   });
@@ -472,6 +1374,11 @@ function bindSkillSectionChrome() {
       if (dash) dash.classList.add("active");
       showSection("alumniSection");
       closeMobileSidebar();
+      if (state.currentUser && normalizeRole(state.currentUser.role) === "Alumni") {
+        hydrateScoresFromStoredResults(state.currentUser.user_id);
+        renderAlumniKpis();
+      }
+      touchSessionActivityThrottled();
     });
   });
 }
@@ -496,6 +1403,8 @@ function showSection(sectionId) {
 }
 
 function bindShellInteractions() {
+  if (document.body.dataset.alskillShellUiBound === "1") return;
+  document.body.dataset.alskillShellUiBound = "1";
   const toggleBtn = document.getElementById("sidebarToggleBtn");
   const sidebar = document.getElementById("sidebar");
   const appShell = document.getElementById("appShell");
@@ -747,7 +1656,10 @@ function bindAuthForms() {
           state.currentUser = applyUserFromAuth(res.user);
           loginStatus.textContent = "";
           registerStatus.textContent = "";
-          redirectAfterLogin();
+          redirectAfterLogin({
+            sessionToken: res.sessionToken,
+            sessionMaxAgeSec: res.sessionMaxAgeSec || 21600
+          });
           return;
         }
 
@@ -847,6 +1759,19 @@ function setHomeWizardStep(step) {
     item.classList.toggle("is-active", s === n);
     item.classList.toggle("is-done", s < n);
   });
+  if (state.currentUser && normalizeRole(state.currentUser.role) === "Alumni") {
+    const uid = state.currentUser.user_id;
+    if (n === 3) {
+      markResultsWizardViewed(uid);
+    } else {
+      try {
+        window.sessionStorage.removeItem(RESULTS_WIZARD_VIEWED_PREFIX + uid);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    updateWizardPrintSummaryVisibility();
+  }
 }
 
 function bindHomeWizard() {
@@ -1117,9 +2042,6 @@ function bindAlumniActions() {
           }
           const scoreMap = (res.computed && res.computed.scores) ? res.computed.scores : {};
           state.lastComputedScores = scoreMap;
-          renderScoreCards(scoreMap);
-          drawAlumniCharts(scoreMap);
-          applyRecommendationFromScores(scoreMap, state.currentTrackKey);
           await refreshAdminAnalytics();
           markOfficialAttemptDone(state.currentUser.user_id);
           try {
@@ -1130,6 +2052,10 @@ function bindAlumniActions() {
           } catch (e) {
             /* ignore */
           }
+          await fetchAndMergeUserAssessmentData(state.currentUser.user_id);
+          hydrateScoresFromStoredResults(state.currentUser.user_id);
+          renderScoreCards(state.lastComputedScores);
+          applyRecommendationFromScores(state.lastComputedScores, state.currentTrackKey);
           renderAlumniKpis();
           applyAssessmentLockUI();
           showHomeToast("Official run saved. Your benchmark is locked in.", "success");
@@ -1141,7 +2067,6 @@ function bindAlumniActions() {
         const computed = computeScoresForUser(state.currentUser.user_id);
         state.lastComputedScores = computed;
         renderScoreCards(computed);
-        drawAlumniCharts(computed);
         applyRecommendationFromScores(computed, state.currentTrackKey);
         markOfficialAttemptDone(state.currentUser.user_id);
         try {
@@ -1162,6 +2087,13 @@ function bindAlumniActions() {
       }
     })();
   });
+
+  const printableResultsBtn = document.getElementById("openPrintableResultsBtn");
+  if (printableResultsBtn) {
+    printableResultsBtn.addEventListener("click", () => {
+      void openAlumniPrintableResultsPage();
+    });
+  }
 }
 
 function renderQuestionnaire(trackKey) {
@@ -1255,6 +2187,10 @@ function renderScoreCards(scoreMap) {
     scoreCards.classList.add("muted");
     scoreCards.textContent = "No computed scores yet.";
     state.lastComputedOverall = null;
+    const coachCard = document.getElementById("skillWizardCoachCard");
+    const coachList = document.getElementById("skillWizardCoachList");
+    if (coachCard) coachCard.classList.add("hidden");
+    if (coachList) coachList.innerHTML = "";
     return;
   }
   scoreCards.classList.remove("muted");
@@ -1262,7 +2198,7 @@ function renderScoreCards(scoreMap) {
     (entries.reduce((sum, [, v]) => sum + Number(v), 0) / entries.length).toFixed(2)
   );
   state.lastComputedOverall = overall;
-  const banner = `<div class="overall-score-banner"><strong>Overall mean</strong> (1–4 rubric): ${overall}</div>`;
+  const banner = `<div class="overall-score-banner"><strong>Overall mean</strong> (1–4 rubric): ${formatRubricOverFour(overall)}</div>`;
   scoreCards.innerHTML =
     banner +
     entries
@@ -1271,13 +2207,26 @@ function renderScoreCards(scoreMap) {
         const level = num >= 3.25 ? "Strong band" : "Development band";
         return `
         <div class="score-card">
-          <p><strong>${category}</strong></p>
-          <p>Category mean: ${score}</p>
+          <p><strong>${escapeHtml(category)}</strong></p>
+          <p>Category mean: ${formatRubricOverFour(num)}</p>
           <p>Band: ${level}</p>
         </div>
       `;
       })
       .join("");
+
+  const coachList = document.getElementById("skillWizardCoachList");
+  const coachCard = document.getElementById("skillWizardCoachCard");
+  if (coachList && coachCard && PAGE === "home") {
+    const bullets = buildDashboardImprovementBullets(scoreMap, overall);
+    if (bullets.length) {
+      coachList.innerHTML = bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("");
+      coachCard.classList.remove("hidden");
+    } else {
+      coachList.innerHTML = "";
+      coachCard.classList.add("hidden");
+    }
+  }
 }
 
 function drawAlumniCharts(scoreMap) {
@@ -1285,13 +2234,113 @@ function drawAlumniCharts(scoreMap) {
   const canvasBar = document.getElementById("alumniBarChart");
   const canvasRadar = document.getElementById("alumniRadarChart");
   if (!canvasBar || !canvasRadar) return;
-  const ctxBar = canvasBar.getContext("2d");
-  clearCanvas(ctxBar, canvasBar);
-  drawBars(ctxBar, canvasBar, entries, ["#1d4e89", "#2b6cb0", "#e3b341"]);
+  if (entries.length === 0) return;
+  const scaleMax = chartScaleMaxFromEntries(entries);
+  const barSurf = setupAlumniChartSurface(canvasBar);
+  if (barSurf.ctx) {
+    drawBars(barSurf.ctx, canvasBar, entries, ["#1d4e89", "#2b6cb0", "#3b82c4", "#60a5fa", "#e3b341"], {
+      scaleMax,
+      layout: "alumni",
+      logicalW: barSurf.lw,
+      logicalH: barSurf.lh
+    });
+  }
+  drawAlumniRadarChart(canvasRadar, entries, scaleMax);
+}
 
-  const ctxRadar = canvasRadar.getContext("2d");
-  clearCanvas(ctxRadar, canvasRadar);
-  drawRadar(ctxRadar, canvasRadar, entries);
+function drawAlumniRadarChart(canvas, entries, scaleMax) {
+  const surf = setupAlumniChartSurface(canvas);
+  const ctx = surf.ctx;
+  if (!ctx) return;
+  const { lw, lh } = surf;
+  const cx = lw / 2;
+  const cy = lh / 2;
+  if (entries.length < 2) {
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "13px Inter, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Radar chart needs 2 or more categories.", cx, cy);
+    ctx.textAlign = "left";
+    return;
+  }
+  const sides = entries.length;
+  const radius = Math.min(lw, lh) * 0.34;
+  const layers = 4;
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 1;
+  for (let layer = 1; layer <= layers; layer += 1) {
+    const r = (radius * layer) / layers;
+    ctx.beginPath();
+    for (let i = 0; i < sides; i += 1) {
+      const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  for (let i = 0; i < sides; i += 1) {
+    const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle));
+    ctx.strokeStyle = "#f1f5f9";
+    ctx.stroke();
+  }
+
+  const sm = scaleMax > 0 ? scaleMax : 4;
+  ctx.beginPath();
+  entries.forEach(([_, value], i) => {
+    const v = Math.min(Math.max(Number(value), 0), sm);
+    const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
+    const r = (radius * v) / sm;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = "rgba(29, 78, 137, 0.18)";
+  ctx.fill();
+  ctx.strokeStyle = "#1d4e89";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#1d4e89";
+  entries.forEach(([_, value], i) => {
+    const v = Math.min(Math.max(Number(value), 0), sm);
+    const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
+    const r = (radius * v) / sm;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = "#374151";
+  ctx.font = "11px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  entries.forEach(([label], i) => {
+    const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
+    const pad = sides > 8 ? 14 : 20;
+    const lx = cx + (radius + pad) * Math.cos(angle);
+    const ly = cy + (radius + pad) * Math.sin(angle);
+    const raw = String(label);
+    const short = raw.length > 18 ? `${raw.slice(0, 16)}…` : raw;
+    ctx.fillText(short, lx, ly);
+  });
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "10px Inter, system-ui, sans-serif";
+  const smLabel = Math.abs(sm - Math.round(sm)) < 0.06 ? String(Math.round(sm)) : sm.toFixed(2);
+  ctx.fillText(`Scale 0–${smLabel} (category means)`, 10, lh - 8);
 }
 
 function bindAdminActions() {
@@ -1382,6 +2431,25 @@ function renderAlumniKpis() {
   let major = state.currentUser.major;
   if (!major || major === "-") major = "—";
 
+  const scoreMapForCoach = {};
+  Object.entries(byCat).forEach(([cat, scores]) => {
+    scoreMapForCoach[cat] = Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2));
+  });
+  if (Object.keys(scoreMapForCoach).length === 0 && state.lastComputedScores && Object.keys(state.lastComputedScores).length > 0) {
+    Object.assign(scoreMapForCoach, state.lastComputedScores);
+  }
+  const coachBullets = buildDashboardImprovementBullets(scoreMapForCoach, overallNum);
+  const coachHtml =
+    coachBullets.length === 0
+      ? ""
+      : `<article class="dashboard-coach-card" aria-labelledby="dash-coach-title">
+          <h3 id="dash-coach-title" class="dashboard-coach-card__title">What to improve next</h3>
+          <p class="dashboard-coach-card__lede">Auto-generated from your category means after your official run.</p>
+          <ul class="dashboard-coach-list">
+            ${coachBullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
+          </ul>
+        </article>`;
+
   const badgesHtml =
     badgeDefs.length === 0
       ? `<p class="game-badges-empty muted">Finish your official run to unlock category badges.</p>`
@@ -1409,7 +2477,7 @@ function renderAlumniKpis() {
             <span class="game-xp-bar__fill" style="width:${masteryPct}%"></span>
           </div>
           <div class="game-hero__meter-meta">
-            <span><strong>${overallDisp}</strong> mean · scale 1–4</span>
+            <span><strong>${formatRubricOverFour(overallNum)}</strong> overall mean</span>
             <span>${xpDisplay} mastery XP</span>
           </div>
         </div>
@@ -1431,6 +2499,7 @@ function renderAlumniKpis() {
           <p class="game-stat-tile__hint">30 items = one full scenario run.</p>
         </article>
       </div>
+      ${coachHtml}
       <div class="game-badges-section">
         <p class="game-badges-title">Category badges</p>
         ${badgesHtml}
@@ -1498,6 +2567,7 @@ function getAdminAnalytics() {
       ? userResults.reduce((sum, row) => sum + row.score, 0) / userResults.length
       : 0;
     performanceIndex.push({
+      userId: user.user_id,
       alumni: anonymize(user.name),
       course: user.course,
       competencyScore: Number(avgScore.toFixed(2)),
@@ -1551,6 +2621,7 @@ function renderRankingTable(rows) {
           <th>Course</th>
           <th>Competency Score</th>
           <th>Performance Level</th>
+          <th>View results</th>
         </tr>
       </thead>
       <tbody>
@@ -1559,10 +2630,15 @@ function renderRankingTable(rows) {
             (row, index) => `
           <tr>
             <td>${index + 1}</td>
-            <td>${row.alumni}</td>
-            <td>${row.course}</td>
+            <td>${escapeHtml(row.alumni)}</td>
+            <td>${escapeHtml(row.course)}</td>
             <td>${row.competencyScore}</td>
-            <td>${row.performanceLevel}</td>
+            <td>${escapeHtml(row.performanceLevel)}</td>
+            <td>${
+              row.userId
+                ? `<a class="link-results" href="${escapeHtml(buildAssessmentResultsHref(row.userId))}">View results</a>`
+                : "—"
+            }</td>
           </tr>
         `
           )
@@ -1719,89 +2795,104 @@ function closeModal() {
   panel.setAttribute("aria-hidden", "true");
 }
 
-function drawBars(ctx, canvas, entries, palette) {
+function drawBars(ctx, canvas, entries, palette, options) {
+  const opts = options && typeof options === "object" ? options : {};
+  const layout = opts.layout || "admin";
+  const logicalW = opts.logicalW != null ? opts.logicalW : canvas.width;
+  const logicalH = opts.logicalH != null ? opts.logicalH : canvas.height;
+  const scaleMax =
+    opts.scaleMax != null && !Number.isNaN(Number(opts.scaleMax))
+      ? Number(opts.scaleMax)
+      : chartScaleMaxFromEntries(entries);
+
   if (entries.length === 0) {
     ctx.fillStyle = "#6b7280";
-    ctx.fillText("No data available", 20, 40);
+    ctx.font = "13px Inter, system-ui, sans-serif";
+    ctx.fillText("No data available", 16, 32);
     return;
   }
-  const width = canvas.width;
-  const height = canvas.height;
-  const baseY = height - 30;
-  const barAreaHeight = height - 60;
-  const barWidth = Math.max(30, Math.floor((width - 40) / entries.length - 12));
-  const gap = 10;
+
+  const left = 14;
+  const bottom = layout === "alumni" ? 78 : 36;
+  const top = 24;
+  const width = logicalW;
+  const height = logicalH;
+  const baseY = height - bottom;
+  const plotW = width - left - 14;
+  const barAreaHeight = Math.max(48, baseY - top - 6);
+  const n = entries.length;
+  const gap = n > 10 ? 4 : n > 6 ? 6 : 8;
+  const barWidth = Math.max(10, Math.floor((plotW - gap * Math.max(0, n - 1)) / Math.max(1, n)));
 
   state.charts.lastRects = [];
+
   entries.forEach(([label, value], index) => {
-    const x = 20 + index * (barWidth + gap);
-    const barHeight = (Number(value) / 5) * barAreaHeight;
-    const y = baseY - barHeight;
+    const x = left + index * (barWidth + gap);
+    const num = Number(value);
+    const capped = Number.isFinite(num) ? Math.min(Math.max(num, 0), scaleMax) : 0;
+    const h = scaleMax > 0 ? (capped / scaleMax) * barAreaHeight : 0;
+    const y = baseY - h;
     ctx.fillStyle = palette[index % palette.length];
-    ctx.fillRect(x, y, barWidth, barHeight);
+    ctx.fillRect(x, y, barWidth, Math.max(h, 1.5));
+
     ctx.fillStyle = "#111827";
-    ctx.font = "11px Segoe UI";
-    ctx.fillText(String(value), x + 4, y - 6);
-    ctx.fillText(label.slice(0, 12), x, baseY + 14);
-    state.charts.lastRects.push({ x, y, w: barWidth, h: barHeight, label });
-  });
-}
+    ctx.font = "12px Inter, system-ui, sans-serif";
+    const valStr = Number.isFinite(num) ? num.toFixed(2) : String(value);
+    ctx.textAlign = "center";
+    ctx.fillText(valStr, x + barWidth / 2, Math.max(y - 10, 14));
+    ctx.textAlign = "left";
 
-function drawRadar(ctx, canvas, entries) {
-  if (entries.length === 0) return;
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  const radius = Math.min(centerX, centerY) - 25;
-  const sides = entries.length;
-
-  for (let layer = 1; layer <= 5; layer += 1) {
-    ctx.beginPath();
-    for (let i = 0; i < sides; i += 1) {
-      const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
-      const x = centerX + ((radius * layer) / 5) * Math.cos(angle);
-      const y = centerY + ((radius * layer) / 5) * Math.sin(angle);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    if (layout === "alumni") {
+      ctx.save();
+      ctx.translate(x + barWidth / 2, baseY + 8);
+      ctx.rotate(-Math.PI / 3.1);
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#4b5563";
+      ctx.font = "11px Inter, system-ui, sans-serif";
+      const lab = String(label).length > 40 ? `${String(label).slice(0, 38)}…` : String(label);
+      ctx.fillText(lab, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#4b5563";
+      ctx.font = "11px Inter, system-ui, sans-serif";
+      ctx.fillText(String(label).slice(0, 16), x, baseY + 12);
     }
-    ctx.closePath();
-    ctx.strokeStyle = "#d1d5db";
-    ctx.stroke();
-  }
-
-  ctx.beginPath();
-  entries.forEach(([_, value], i) => {
-    const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
-    const x = centerX + ((radius * value) / 5) * Math.cos(angle);
-    const y = centerY + ((radius * value) / 5) * Math.sin(angle);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    state.charts.lastRects.push({ x, y, w: barWidth, h, label });
   });
-  ctx.closePath();
-  ctx.fillStyle = "rgba(43, 108, 176, 0.22)";
-  ctx.fill();
-  ctx.strokeStyle = "#1d4e89";
-  ctx.stroke();
 }
 
 function detectBarClick(event, chartType) {
-  const rect = event.target.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
+  const canvas = event.target;
+  const rect = canvas.getBoundingClientRect();
   const entries = chartType === "course" ? state.charts.courseEntries : state.charts.categoryEntries;
   if (!entries || entries.length === 0) return null;
 
-  const width = event.target.width;
-  const height = event.target.height;
-  const baseY = height - 30;
-  const barAreaHeight = height - 60;
-  const barWidth = Math.max(30, Math.floor((width - 40) / entries.length - 12));
-  const gap = 10;
+  const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+  const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+  const x = (event.clientX - rect.left) * scaleX;
+  const y = (event.clientY - rect.top) * scaleY;
+
+  const logicalW = canvas.width;
+  const logicalH = canvas.height;
+  const scaleMax = chartScaleMaxFromEntries(entries);
+  const left = 14;
+  const bottom = 36;
+  const top = 24;
+  const baseY = logicalH - bottom;
+  const plotW = logicalW - left - 14;
+  const barAreaHeight = Math.max(48, baseY - top - 6);
+  const n = entries.length;
+  const gap = n > 10 ? 4 : n > 6 ? 6 : 8;
+  const barWidth = Math.max(10, Math.floor((plotW - gap * Math.max(0, n - 1)) / Math.max(1, n)));
 
   for (let index = 0; index < entries.length; index += 1) {
-    const [label, value] = entries[index];
-    const barHeight = (Number(value) / 5) * barAreaHeight;
-    const barX = 20 + index * (barWidth + gap);
+    const [, value] = entries[index];
+    const barX = left + index * (barWidth + gap);
+    const num = Number(value);
+    const capped = Number.isFinite(num) ? Math.min(Math.max(num, 0), scaleMax) : 0;
+    const barHeight = scaleMax > 0 ? (capped / scaleMax) * barAreaHeight : 0;
     const barY = baseY - barHeight;
+    const label = entries[index][0];
     if (x >= barX && x <= barX + barWidth && y >= barY && y <= baseY) return label;
   }
   return null;
