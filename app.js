@@ -73,6 +73,8 @@ const state = {
   lastComputedOverall: null,
   currentTrackKey: null,
   lastRecommendation: null,
+  questionnaireSteps: [],
+  questionnaireStepIndex: 0,
   charts: {}
 };
 
@@ -385,6 +387,189 @@ function setAssessmentSubmitting(busy) {
   if (form) {
     form.querySelectorAll("input[type=radio]").forEach((el) => {
       el.disabled = !!busy;
+    });
+  }
+  const prevBtn = document.getElementById("questionnairePrevBtn");
+  const nextBtn = document.getElementById("questionnaireNextBtn");
+  if (prevBtn) prevBtn.disabled = !!busy || state.questionnaireStepIndex <= 0;
+  if (nextBtn) nextBtn.disabled = !!busy || !validateQuestionnaireStep(state.questionnaireStepIndex).ok;
+}
+
+function buildQuestionnaireCategorySteps(questions) {
+  const steps = [];
+  const seen = new Map();
+  questions.forEach((q) => {
+    const cat = String(q.category || "General");
+    if (!seen.has(cat)) {
+      seen.set(cat, steps.length);
+      steps.push({ category: cat, questions: [] });
+    }
+    steps[seen.get(cat)].questions.push(q);
+  });
+  return steps;
+}
+
+function renderQuestionBlockHtml(q, displayNum) {
+  const opts = q.choices
+    .map(
+      (ch) => `
+        <label class="option-card option-card--likert">
+          <input class="option-card__input" type="radio" name="${escapeHtml(q.id)}" value="${escapeHtml(ch.key)}" data-score="${ch.score}" required />
+          <span class="option-card__body">
+            <span class="option-card__text">${escapeHtml(ch.text)}</span>
+          </span>
+        </label>`
+    )
+    .join("");
+  const catUpper = escapeHtml(String(q.category || "").toUpperCase());
+  return `
+      <article class="question-block" data-question-id="${escapeHtml(q.id)}">
+        <header class="question-block__header">
+          <span class="question-block__num">Item ${displayNum}</span>
+          ${
+            q.skillType === "soft"
+              ? '<span class="question-block__skill question-block__skill--soft">Soft skill</span>'
+              : '<span class="question-block__skill question-block__skill--hard">Hard skill</span>'
+          }
+          <span class="question-block__cat">${catUpper}</span>
+        </header>
+        <p class="question-block__stem">${escapeHtml(q.question)}</p>
+        <div class="question-block__options question-block__options--likert" role="radiogroup" aria-label="Item ${displayNum}">${opts}</div>
+      </article>`;
+}
+
+function validateQuestionnaireStep(stepIndex) {
+  const steps = state.questionnaireSteps;
+  if (!steps.length || stepIndex < 0 || stepIndex >= steps.length) {
+    return { ok: true, unanswered: [], stepIndex };
+  }
+  const form = document.getElementById("questionnaireForm");
+  const panel = form?.querySelector(`.questionnaire-step[data-step-index="${stepIndex}"]`);
+  const unanswered = [];
+  steps[stepIndex].questions.forEach((q, i) => {
+    const block = panel?.querySelector(`.question-block[data-question-id="${q.id}"]`);
+    const checked = block?.querySelector('input[type=radio]:checked');
+    if (!checked) unanswered.push({ question: q, itemNum: i + 1 });
+  });
+  return { ok: unanswered.length === 0, unanswered, stepIndex };
+}
+
+function validateAllQuestionnaireSteps() {
+  for (let i = 0; i < state.questionnaireSteps.length; i++) {
+    const result = validateQuestionnaireStep(i);
+    if (!result.ok) return { ok: false, ...result };
+  }
+  return { ok: true, unanswered: [], stepIndex: state.questionnaireSteps.length - 1 };
+}
+
+function markUnansweredQuestionBlocks(unanswered) {
+  const form = document.getElementById("questionnaireForm");
+  if (!form) return;
+  form.querySelectorAll(".question-block--unanswered").forEach((el) => el.classList.remove("question-block--unanswered"));
+  unanswered.forEach(({ question }) => {
+    const block = form.querySelector(`.question-block[data-question-id="${question.id}"]`);
+    if (block) block.classList.add("question-block--unanswered");
+  });
+  const first = form.querySelector(".question-block--unanswered");
+  if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function showQuestionnaireStep(stepIndex) {
+  const steps = state.questionnaireSteps;
+  if (!steps.length) return;
+  const idx = Math.max(0, Math.min(stepIndex, steps.length - 1));
+  state.questionnaireStepIndex = idx;
+  const form = document.getElementById("questionnaireForm");
+  if (!form) return;
+  form.querySelectorAll(".questionnaire-step").forEach((panel, i) => {
+    const active = i === idx;
+    panel.classList.toggle("hidden", !active);
+    panel.hidden = !active;
+  });
+  form.querySelectorAll(".question-block--unanswered").forEach((el) => el.classList.remove("question-block--unanswered"));
+  updateQuestionnaireNavUI();
+  const activePanel = form.querySelector(`.questionnaire-step[data-step-index="${idx}"]`);
+  if (activePanel) activePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function updateQuestionnaireNavUI() {
+  const steps = state.questionnaireSteps;
+  const idx = state.questionnaireStepIndex;
+  const total = steps.length;
+  const step = steps[idx];
+  const validation = validateQuestionnaireStep(idx);
+  const isLast = total > 0 && idx >= total - 1;
+
+  const progText = document.getElementById("questionnaireProgressText");
+  const progBar = document.getElementById("questionnaireProgressBar");
+  const progFill = document.getElementById("questionnaireProgressFill");
+  const stepHint = document.getElementById("questionnaireStepHint");
+  const prevBtn = document.getElementById("questionnairePrevBtn");
+  const nextBtn = document.getElementById("questionnaireNextBtn");
+  const submitBtn = document.getElementById("submitResponsesBtn");
+
+  if (progText && step) {
+    progText.textContent = `Category ${idx + 1} of ${total}: ${step.category}`;
+  }
+  const pct = total ? Math.round(((idx + 1) / total) * 100) : 0;
+  if (progFill) progFill.style.width = `${pct}%`;
+  if (progBar) {
+    progBar.setAttribute("aria-valuenow", String(pct));
+    progBar.setAttribute("aria-valuetext", step ? `${step.category}, ${pct}% complete` : "");
+  }
+  if (stepHint) {
+    const remaining = validation.unanswered.length;
+    stepHint.textContent = validation.ok
+      ? isLast
+        ? "All items in this category are answered. Submit when you are ready."
+        : "All items answered. Continue to the next category."
+      : remaining === 1
+        ? "1 item still needs an answer in this category."
+        : `${remaining} items still need answers in this category.`;
+  }
+  if (prevBtn) prevBtn.disabled = idx <= 0;
+  if (nextBtn) {
+    nextBtn.classList.toggle("hidden", isLast);
+    nextBtn.disabled = !validation.ok;
+  }
+  if (submitBtn) {
+    submitBtn.classList.toggle("hidden", !isLast);
+    submitBtn.disabled = !validation.ok;
+  }
+}
+
+function bindQuestionnaireStepControls() {
+  const form = document.getElementById("questionnaireForm");
+  const prevBtn = document.getElementById("questionnairePrevBtn");
+  const nextBtn = document.getElementById("questionnaireNextBtn");
+  if (!form || form.dataset.stepBound === "1") return;
+  form.dataset.stepBound = "1";
+  form.addEventListener("change", (e) => {
+    if (e.target.matches('input[type="radio"]')) {
+      e.target.closest(".question-block")?.classList.remove("question-block--unanswered");
+      updateQuestionnaireNavUI();
+    }
+  });
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (state.questionnaireStepIndex > 0) showQuestionnaireStep(state.questionnaireStepIndex - 1);
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      const result = validateQuestionnaireStep(state.questionnaireStepIndex);
+      if (!result.ok) {
+        markUnansweredQuestionBlocks(result.unanswered);
+        const n = result.unanswered.length;
+        showHomeToast(
+          n === 1 ? "Answer the highlighted item before continuing." : `Answer ${n} highlighted items before continuing.`,
+          "error"
+        );
+        return;
+      }
+      if (state.questionnaireStepIndex < state.questionnaireSteps.length - 1) {
+        showQuestionnaireStep(state.questionnaireStepIndex + 1);
+      }
     });
   }
 }
@@ -2084,8 +2269,25 @@ function bindAlumniActions() {
     }
     const form = document.getElementById("questionnaireForm");
     if (!form) return;
+    const allValid = validateAllQuestionnaireSteps();
+    if (!allValid.ok) {
+      showQuestionnaireStep(allValid.stepIndex);
+      markUnansweredQuestionBlocks(allValid.unanswered);
+      const step = state.questionnaireSteps[allValid.stepIndex];
+      const n = allValid.unanswered.length;
+      showHomeToast(
+        step
+          ? n === 1
+            ? `Answer the highlighted item in “${step.category}” before submitting.`
+            : `Answer ${n} highlighted items in “${step.category}” before submitting.`
+          : "Answer every question before submitting.",
+        "error"
+      );
+      if (PAGE === "home") setHomeWizardStep(2);
+      return;
+    }
     const picked = [...form.querySelectorAll("input[type=radio]:checked")];
-    if (picked.length === 0 || picked.length !== state.questions.length) {
+    if (picked.length !== state.questions.length) {
       showHomeToast("Answer every question, then submit.", "error");
       if (PAGE === "home") setHomeWizardStep(2);
       return;
@@ -2174,6 +2376,7 @@ function bindAlumniActions() {
   if (printableResultsBtn) printableResultsBtn.addEventListener("click", printHandler);
   const dashboardPrintBtn = document.getElementById("dashboardPrintResultsBtn");
   if (dashboardPrintBtn) dashboardPrintBtn.addEventListener("click", printHandler);
+  bindQuestionnaireStepControls();
 }
 
 function renderQuestionnaire(trackKey) {
@@ -2193,45 +2396,38 @@ function renderQuestionnaire(trackKey) {
   state.questions = questions;
   if (questions.length === 0) {
     form.innerHTML = "";
+    state.questionnaireSteps = [];
+    const wizard = document.getElementById("questionnaireWizard");
+    if (wizard) wizard.classList.add("hidden");
     if (hint) hint.textContent = "No assessment items are defined for this selection.";
     if (continueBtn) continueBtn.disabled = true;
     if (PAGE === "home") showHomeToast("No questions found for the selected track.", "error");
     return;
   }
+  state.questionnaireSteps = buildQuestionnaireCategorySteps(questions);
+  state.questionnaireStepIndex = 0;
+  const wizard = document.getElementById("questionnaireWizard");
+  if (wizard) wizard.classList.remove("hidden");
   if (hint) {
-    hint.textContent = `${questions.length} self-assessment items loaded (50 expected). Use Always, Sometimes, Maybe, or Never for each statement.`;
+    const catCount = state.questionnaireSteps.length;
+    hint.textContent = `${questions.length} items in ${catCount} categories. Complete one category at a time.`;
   }
   if (continueBtn) continueBtn.disabled = false;
-  form.innerHTML = questions
-    .map((q, idx) => {
-      const opts = q.choices
-        .map(
-          (ch) => `
-        <label class="option-card option-card--likert">
-          <input class="option-card__input" type="radio" name="${escapeHtml(q.id)}" value="${escapeHtml(ch.key)}" data-score="${ch.score}" required />
-          <span class="option-card__body">
-            <span class="option-card__text">${escapeHtml(ch.text)}</span>
-          </span>
-        </label>`
-        )
-        .join("");
-      const catUpper = escapeHtml(String(q.category || "").toUpperCase());
+  form.innerHTML = state.questionnaireSteps
+    .map((step, stepIdx) => {
+      const blocks = step.questions.map((q, i) => renderQuestionBlockHtml(q, i + 1)).join("");
       return `
-      <article class="question-block" aria-labelledby="q-head-${idx}">
-        <header class="question-block__header" id="q-head-${idx}">
-          <span class="question-block__num">Question ${idx + 1}</span>
-          ${
-            q.skillType === "soft"
-              ? '<span class="question-block__skill question-block__skill--soft">Soft skill</span>'
-              : '<span class="question-block__skill question-block__skill--hard">Hard skill</span>'
-          }
-          <span class="question-block__cat">${catUpper}</span>
+      <section class="questionnaire-step${stepIdx === 0 ? "" : " hidden"}" data-step-index="${stepIdx}" data-category="${escapeHtml(step.category)}" ${stepIdx === 0 ? "" : "hidden"}>
+        <header class="questionnaire-step__head">
+          <h4 class="questionnaire-step__title">${escapeHtml(step.category)}</h4>
+          <p class="questionnaire-step__meta muted">${step.questions.length} item${step.questions.length === 1 ? "" : "s"} in this category</p>
         </header>
-        <p class="question-block__stem">${escapeHtml(q.question)}</p>
-        <div class="question-block__options question-block__options--likert" role="radiogroup" aria-label="Question ${idx + 1}">${opts}</div>
-      </article>`;
+        <div class="questionnaire-step__items">${blocks}</div>
+      </section>`;
     })
     .join("");
+  bindQuestionnaireStepControls();
+  showQuestionnaireStep(0);
   if (PAGE === "home") setHomeWizardStep(2);
 }
 
