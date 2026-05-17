@@ -76,7 +76,7 @@ const state = {
   charts: {}
 };
 
-/** Session flag plus stored responses/results imply one official 30-question attempt completed. */
+/** Session flag plus stored responses/results imply one official skills assessment attempt completed. */
 const OFFICIAL_ATTEMPT_STORAGE_PREFIX = "alskill_official_attempt_v1_";
 const LAST_ASSESSMENT_TRACK_PREFIX = "alskill_last_assessment_track_v1_";
 const RESULTS_WIZARD_VIEWED_PREFIX = "alskill_results_wizard_viewed_v1_";
@@ -122,9 +122,9 @@ function hasOfficialAttemptDone(uid) {
     /* ignore */
   }
   const responsesCount = state.responses.filter((r) => r.user_id === uid).length;
-  if (responsesCount >= 30) return true;
+  if (responsesCount >= 35) return true;
   const categories = new Set(state.results.filter((r) => r.user_id === uid).map((r) => r.category));
-  return categories.size >= 6;
+  return categories.size >= 10;
 }
 
 function markOfficialAttemptDone(uid) {
@@ -162,7 +162,7 @@ function getRankTier(overallNum) {
   }
   const o = Number(overallNum);
   if (o < 2) return { key: "novice", label: "Novice", blurb: "Foundation skills — keep building.", cls: "game-rank--novice" };
-  if (o < 2.5) return { key: "learner", label: "Learner", blurb: "Solid baseline across scenarios.", cls: "game-rank--learner" };
+  if (o < 2.5) return { key: "learner", label: "Learner", blurb: "Solid baseline across skill areas.", cls: "game-rank--learner" };
   if (o < 3) return { key: "specialist", label: "Specialist", blurb: "Consistent judgement under pressure.", cls: "game-rank--specialist" };
   if (o < 3.5) return { key: "adept", label: "Adept", blurb: "Strong readiness signals.", cls: "game-rank--adept" };
   if (o < 3.85) return { key: "expert", label: "Expert", blurb: "High proficiency benchmark.", cls: "game-rank--expert" };
@@ -241,7 +241,7 @@ function buildDashboardImprovementBullets(scoreMap, overallNum) {
 
   if (o != null && o < 2.5) {
     bullets.push(
-      "Overall is in the foundation band — repeat the scenario set slowly, one category at a time, and note why each best answer fits."
+      "Overall is in the foundation band — revisit assessment items slowly, one category at a time, and reflect on where Always or Sometimes fits your real practice."
     );
   } else if (o != null && o < 3) {
     bullets.push(
@@ -257,14 +257,14 @@ function buildDashboardImprovementBullets(scoreMap, overallNum) {
 
   weak.slice(0, 3).forEach(([cat, val]) => {
     bullets.push(
-      `Improve ${cat} (mean ${val.toFixed(2)}) — redo related items, compare with higher-scoring rationale, and rehearse until the preferred choice feels obvious.`
+      `Improve ${cat} (mean ${val.toFixed(2)}) — revisit related statements honestly and practice behaviors until Always or Sometimes reflects your day-to-day work.`
     );
   });
 
   if (weak.length === 0 && entries.length > 1) {
     const [cat, val] = entries[0];
     bullets.push(
-      `Relative focus: ${cat} (${val.toFixed(2)}) — even solid scores benefit from one more pass on edge-case prompts in this area.`
+      `Relative focus: ${cat} (${val.toFixed(2)}) — even solid scores benefit from one more honest pass on statements in this area.`
     );
   }
 
@@ -458,7 +458,7 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
     <article class="results-doc">
       <p class="results-doc__eyebrow">Skill assessment summary</p>
       <h1 class="results-doc__title">${escapeHtml(subjectUser.name)}</h1>
-      <p class="results-doc__meta">ALSKILL · Official scenario benchmark · Category means shown as <strong>mean / 4.00</strong></p>
+      <p class="results-doc__meta">ALSKILL · Official skills self-assessment · Category means shown as <strong>mean / 4.00</strong></p>
       ${identityHtml}
       <div class="results-doc__grid">
         <div class="results-stat">
@@ -485,7 +485,7 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
       ${itemOutcomesHtml}
       <footer class="results-doc__footer">ALSKILL · ${escapeHtml(
         new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
-      )} · Benchmark reflects the official scenario assessment.</footer>
+      )} · Benchmark reflects the official hard and soft skills assessment.</footer>
     </article>`;
 }
 
@@ -605,8 +605,8 @@ function applyAssessmentLockUI() {
   const skillLede = document.getElementById("skillSectionLede");
   if (skillLede) {
     skillLede.textContent = locked
-      ? "Your official run is locked in. Review results below, or practice the same scenarios independently to sharpen judgement."
-      : "Select your program, complete the questionnaire, then review scores. You have one official submission for your profile benchmark.";
+      ? "Your official run is locked in. Review results below, or revisit the same statements on your own to track growth."
+      : "Select your program, complete the skills self-assessment (Always / Sometimes / Maybe / Never), then review your hard and soft skill profile.";
   }
 
   const dashLede = document.getElementById("dashboardLede");
@@ -1173,7 +1173,7 @@ async function initResultsPage() {
       <article class="results-doc">
         <p class="results-doc__eyebrow">Printable record</p>
         <h1 class="results-doc__title">Not available yet</h1>
-        <p class="muted">Official printable results open after you complete the scenario benchmark in <strong>Test your skill</strong>.</p>
+        <p class="muted">Official printable results open after you complete the skills self-assessment in <strong>Test your skill</strong>.</p>
         <p><a class="results-back-link" href="${escapeHtml(homeWorkspaceHrefFromResults())}">Return to workspace</a></p>
       </article>`;
     const back = document.getElementById("resultsBackLink");
@@ -2119,7 +2119,7 @@ function renderQuestionnaire(trackKey) {
     return;
   }
   if (hint) {
-    hint.textContent = `${questions.length} scenario items loaded (30 expected). Continue to responses when ready.`;
+    hint.textContent = `${questions.length} self-assessment items loaded. Rate each with Always, Sometimes, Maybe, or Never, then continue.`;
   }
   if (continueBtn) continueBtn.disabled = false;
   form.innerHTML = questions
@@ -2127,10 +2127,9 @@ function renderQuestionnaire(trackKey) {
       const opts = q.choices
         .map(
           (ch) => `
-        <label class="option-card">
+        <label class="option-card option-card--likert">
           <input class="option-card__input" type="radio" name="${escapeHtml(q.id)}" value="${escapeHtml(ch.key)}" data-score="${ch.score}" required />
           <span class="option-card__body">
-            <span class="option-card__key">${escapeHtml(ch.key)}.</span>
             <span class="option-card__text">${escapeHtml(ch.text)}</span>
           </span>
         </label>`
@@ -2141,10 +2140,15 @@ function renderQuestionnaire(trackKey) {
       <article class="question-block" aria-labelledby="q-head-${idx}">
         <header class="question-block__header" id="q-head-${idx}">
           <span class="question-block__num">Question ${idx + 1}</span>
+          ${
+            q.skillType === "soft"
+              ? '<span class="question-block__skill question-block__skill--soft">Soft skill</span>'
+              : '<span class="question-block__skill question-block__skill--hard">Hard skill</span>'
+          }
           <span class="question-block__cat">${catUpper}</span>
         </header>
         <p class="question-block__stem">${escapeHtml(q.question)}</p>
-        <div class="question-block__options" role="radiogroup" aria-label="Question ${idx + 1}">${opts}</div>
+        <div class="question-block__options question-block__options--likert" role="radiogroup" aria-label="Question ${idx + 1}">${opts}</div>
       </article>`;
     })
     .join("");
@@ -2410,22 +2414,7 @@ function renderAlumniKpis() {
 
   const tier = getRankTier(overallNum);
   const attemptLocked = hasOfficialAttemptDone(uid);
-  const attemptLabel = attemptLocked ? "Quest cleared · locked" : "Quest ready · 1 attempt";
-
-  let badgeDefs = [];
-  if (Object.keys(byCat).length > 0) {
-    badgeDefs = Object.entries(byCat).map(([cat, scores]) => {
-      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-      const unlocked = avg >= 3.25;
-      return { cat, avg: avg.toFixed(2), unlocked };
-    });
-  } else if (state.lastComputedScores && Object.keys(state.lastComputedScores).length > 0) {
-    badgeDefs = Object.entries(state.lastComputedScores).map(([cat, v]) => {
-      const avg = Number(v);
-      const unlocked = !Number.isNaN(avg) && avg >= 3.25;
-      return { cat, avg: Number.isNaN(avg) ? "—" : avg.toFixed(2), unlocked };
-    });
-  }
+  const attemptLabel = attemptLocked ? "Assessment complete · locked" : "Ready · one official attempt";
 
   const program = state.currentUser.course && state.currentUser.course !== "-" ? state.currentUser.course : "—";
   let major = state.currentUser.major;
@@ -2444,68 +2433,51 @@ function renderAlumniKpis() {
       ? ""
       : `<article class="dashboard-coach-card" aria-labelledby="dash-coach-title">
           <h3 id="dash-coach-title" class="dashboard-coach-card__title">What to improve next</h3>
-          <p class="dashboard-coach-card__lede">Auto-generated from your category means after your official run.</p>
+          <p class="dashboard-coach-card__lede">Auto-generated from your hard and soft skill means after your official run.</p>
           <ul class="dashboard-coach-list">
             ${coachBullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
           </ul>
         </article>`;
 
-  const badgesHtml =
-    badgeDefs.length === 0
-      ? `<p class="game-badges-empty muted">Finish your official run to unlock category badges.</p>`
-      : `<div class="game-badges">
-          ${badgeDefs
-            .map((b) => {
-              const cls = b.unlocked ? "game-badge game-badge--unlocked" : "game-badge game-badge--locked";
-              const icon = b.unlocked ? "" : '<span class="game-badge__lock" aria-hidden="true"></span>';
-              return `<span class="${cls}" title="${escapeHtml(b.cat)}: ${b.avg}">${icon}<span class="game-badge__name">${escapeHtml(b.cat)}</span></span>`;
-            })
-            .join("")}
-        </div>`;
+  const hardSoft =
+    typeof alsHardSoftMeans === "function"
+      ? alsHardSoftMeans(scoreMapForCoach)
+      : { hard: {}, soft: {}, hardMean: null, softMean: null };
+  const hardMeanDisp = hardSoft.hardMean != null ? formatRubricOverFour(hardSoft.hardMean) : "—";
+  const softMeanDisp = hardSoft.softMean != null ? formatRubricOverFour(hardSoft.softMean) : "—";
 
   container.innerHTML = `
-    <div class="game-hub">
-      <article class="game-hero ${tier.cls}">
-        <div class="game-hero__rank">
-          <p class="game-hero__rank-label">Skill rank</p>
-          <p class="game-hero__rank-title">${escapeHtml(tier.label)}</p>
-          <p class="game-hero__rank-blurb">${escapeHtml(tier.blurb)}</p>
+    <div class="brain-dashboard">
+      <div class="brain-dashboard__summary">
+        <article class="brain-summary-card ${tier.cls}">
+          <p class="brain-summary-card__label">Overall profile</p>
+          <p class="brain-summary-card__rank">${escapeHtml(tier.label)}</p>
+          <p class="brain-summary-card__meta"><strong>${formatRubricOverFour(overallNum)}</strong> combined mean · ${escapeHtml(attemptLabel)}</p>
+          <p class="brain-summary-card__program">${escapeHtml(program)} · Major: ${escapeHtml(major)}</p>
+        </article>
+        <div class="brain-summary-stats">
+          <article class="brain-mini-stat brain-mini-stat--hard">
+            <p class="brain-mini-stat__label">Hard skill mean</p>
+            <p class="brain-mini-stat__value">${hardMeanDisp}</p>
+          </article>
+          <article class="brain-mini-stat brain-mini-stat--soft">
+            <p class="brain-mini-stat__label">Soft skill mean</p>
+            <p class="brain-mini-stat__value">${softMeanDisp}</p>
+          </article>
+          <article class="brain-mini-stat">
+            <p class="brain-mini-stat__label">Responses logged</p>
+            <p class="brain-mini-stat__value">${myResponses.length}</p>
+          </article>
         </div>
-        <div class="game-hero__meter">
-          <p class="game-hero__meter-label">Mastery meter</p>
-          <div class="game-xp-bar" role="progressbar" aria-valuenow="${masteryPct}" aria-valuemin="0" aria-valuemax="100">
-            <span class="game-xp-bar__fill" style="width:${masteryPct}%"></span>
-          </div>
-          <div class="game-hero__meter-meta">
-            <span><strong>${formatRubricOverFour(overallNum)}</strong> overall mean</span>
-            <span>${xpDisplay} mastery XP</span>
-          </div>
-        </div>
-      </article>
-      <div class="game-stat-grid">
-        <article class="game-stat-tile game-stat-tile--quest">
-          <p class="game-stat-tile__label">Official attempt</p>
-          <p class="game-stat-tile__value">${escapeHtml(attemptLabel)}</p>
-          <p class="game-stat-tile__hint">One scored run — same items for your own study after.</p>
-        </article>
-        <article class="game-stat-tile game-stat-tile--loadout">
-          <p class="game-stat-tile__label">Loadout</p>
-          <p class="game-stat-tile__value">${escapeHtml(program)}</p>
-          <p class="game-stat-tile__hint">Major: ${escapeHtml(major)}</p>
-        </article>
-        <article class="game-stat-tile game-stat-tile--items">
-          <p class="game-stat-tile__label">Response log</p>
-          <p class="game-stat-tile__value">${myResponses.length} items</p>
-          <p class="game-stat-tile__hint">30 items = one full scenario run.</p>
-        </article>
       </div>
+      <div class="brain-scene-host" id="brainSceneHost" aria-live="polite"></div>
       ${coachHtml}
-      <div class="game-badges-section">
-        <p class="game-badges-title">Category badges</p>
-        ${badgesHtml}
-      </div>
     </div>
   `;
+
+  if (typeof initAlskillBrainDashboard === "function") {
+    initAlskillBrainDashboard(document.getElementById("brainSceneHost"), scoreMapForCoach);
+  }
 }
 
 function renderAdminKpis(analytics) {

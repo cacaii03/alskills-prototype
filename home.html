@@ -114,7 +114,7 @@
             <header class="workspace-head">
               <h2 class="workspace-title">Dashboard</h2>
               <p class="workspace-lede" id="dashboardLede">
-                Your skill profile and progress-style snapshot. Open <strong>Test your skill</strong> when you are ready for your one official attempt.
+                Your hard and soft skill profile in a brain-style map. Open <strong>Test your skill</strong> when you are ready for your one official self-assessment.
               </p>
             </header>
             <div id="alumniKpi" class="kpi-grid kpi-grid--dashboard"></div>
@@ -124,7 +124,7 @@
             <header class="workspace-head">
               <h2 class="workspace-title">Test your skill</h2>
               <p class="workspace-lede" id="skillSectionLede">
-                Select your program, complete the scenario questionnaire, then review scores and recommendations.
+                Select your program, rate each skills statement (Always, Sometimes, Maybe, Never), then review your hard and soft skill profile.
               </p>
             </header>
 
@@ -132,7 +132,7 @@
               <div class="assessment-lock-banner__inner">
                 <p class="assessment-lock-banner__title">Official attempt recorded</p>
                 <p class="assessment-lock-banner__text">
-                  Each alumni completes this benchmark once. Your score stays on your profile; revisit the same scenarios on your own to practice mastery offline.
+                  Each alumni completes this benchmark once. Your profile keeps your hard and soft skill means; you may revisit the same statements on your own to track growth.
                 </p>
                 <button type="button" class="primary ripple" id="lockedViewResultsBtn">View my results</button>
               </div>
@@ -167,7 +167,7 @@
                 <div class="wizard-panel-inner">
                   <h3 id="wiz-skill-1" class="wizard-step-title">Program setup</h3>
                   <p class="wizard-step-desc">
-                    Select your program and major (if applicable), then load the 30-item scenario assessment.
+                    Select your program and major (if applicable), then load the skills self-assessment (hard + soft skill items).
                   </p>
                   <article class="card card--course">
                     <div class="course-row course-row--stack">
@@ -196,7 +196,7 @@
                 <div class="wizard-panel-inner">
                   <h3 id="wiz-skill-2" class="wizard-step-title">Assessment</h3>
                   <p class="wizard-step-desc">
-                    Each item describes a realistic situation. Choose A–D; scores map to a 1–4 rubric for analytics.
+                    Rate how true each statement is for you using <strong>Always</strong>, <strong>Sometimes</strong>, <strong>Maybe</strong>, or <strong>Never</strong>. Items cover program hard skills and shared soft skills.
                   </p>
                   <article class="card card--form">
                     <form id="questionnaireForm" class="form form--questionnaire"></form>
@@ -212,7 +212,7 @@
                 <div class="wizard-panel-inner">
                   <h3 id="wiz-skill-3" class="wizard-step-title">Results</h3>
                   <p class="wizard-step-desc">
-                    Category means on a 1–4 rubric (shown as mean / 4.00), recommendations, and improvement notes based on your profile.
+                    Hard and soft skill means on a 1–4 rubric (mean / 4.00), program recommendations, and improvement notes on your dashboard brain map.
                   </p>
                   <article class="card card--recommend" id="recommendationCard">
                     <h4 class="card-heading">Recommendations</h4>
@@ -265,7 +265,7 @@
               <article class="card card--mutedLift">
                 <h3 class="card-heading">Flow</h3>
                 <ol class="list-prose list-prose--numbered">
-                  <li>Use <strong>Test your skill</strong> to complete the scenario questionnaire.</li>
+                  <li>Use <strong>Test your skill</strong> to complete the skills self-assessment.</li>
                   <li>After your official run, open <strong>Test your skill</strong> → <strong>Results</strong> to review scores, then <strong>Print official summary</strong> for a formal record.</li>
                   <li>Results persist via your institutional backend when connected.</li>
                 </ol>
@@ -311,6 +311,7 @@
     </div>
 
     <script src="assessment-catalog.js"></script>
+    <script src="brain-dashboard.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

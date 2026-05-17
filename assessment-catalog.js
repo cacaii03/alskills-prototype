@@ -1,7 +1,7 @@
 /**
  * ALSKILL dynamic course assessment catalog.
- * Modular structure: programs, majors, per-track categories, shared Research Skills,
- * scenario MCQs (4 options A-D -> scores 1-4), scoring + recommendation helpers.
+ * Self-assessment items (Always / Sometimes / Maybe / Never → scores 4–1),
+ * program hard-skill domains, cross-cutting hard skills, and shared soft skills.
  */
 (function (global) {
   "use strict";
@@ -41,7 +41,6 @@
     }
   ];
 
-  /** Program-specific five categories + shared sixth "Research Skills" added by builder. */
   var TRACK_CATEGORY_NAMES = {
     BSCT: ["Programming", "Hardware", "Networking", "Web Design", "Graphic Design"],
     "BSBA:MM": [
@@ -95,553 +94,86 @@
     ]
   };
 
-  function choices(a, b, c, d, scores) {
-    scores = scores || [1, 2, 3, 4];
+  /** Cross-cutting hard skills (shared across all tracks). */
+  var HARD_CROSS_CATEGORIES = ["Math & Statistics", "Data & Technical Skill"];
+
+  /** Soft skills analyzed on every track (right-brain profile). */
+  var SOFT_SKILL_CATEGORIES = [
+    "Problem Solving",
+    "Storytelling",
+    "Collaboration",
+    "Curiosity",
+    "Communication",
+    "Creativity"
+  ];
+
+  function frequencyChoices() {
     return [
-      { key: "A", text: a, score: scores[0] },
-      { key: "B", text: b, score: scores[1] },
-      { key: "C", text: c, score: scores[2] },
-      { key: "D", text: d, score: scores[3] }
+      { key: "always", text: "Always", score: 4 },
+      { key: "sometimes", text: "Sometimes", score: 3 },
+      { key: "maybe", text: "Maybe", score: 2 },
+      { key: "never", text: "Never", score: 1 }
     ];
   }
 
-  /** Shared sixth category: Research Skills (same scenarios; IDs differ per track). */
-  var RESEARCH_SKILL_SCENARIOS = [
-    {
-      stem:
-        "You must evaluate whether a grey-literature blog post is admissible evidence for a capstone brief. What is your first step?",
-      options: choices(
-        "Use it if it ranks high on search engines.",
-        "Check author credentials, publication date, cited sources, and potential conflicts of interest.",
-        "Paraphrase it extensively so it appears original.",
-        "Exclude it automatically because it is not peer-reviewed.",
-        [1, 4, 1, 2]
-      )
-    },
-    {
-      stem:
-        "Your team disagrees on sample size for a survey. What is the most defensible move before fieldwork?",
-      options: choices(
-        "Skip power analysis to save time.",
-        "Document assumptions, estimate required power or margin of error, and justify the sample plan.",
-        "Copy sample sizes from unrelated studies.",
-        "Let the largest subgroup dictate the entire design without rationale.",
-        [1, 4, 1, 2]
-      )
-    },
-    {
-      stem:
-        "After collecting survey data, you find missing values clustered in one demographic group. What should you do?",
-      options: choices(
-        "Delete those rows silently.",
-        "Investigate whether missingness is random or systematic; document handling and limitations.",
-        "Impute the mean for everyone without recording it.",
-        "Fabricate plausible answers to balance cells.",
-        [1, 4, 2, 1]
-      )
-    },
-    {
-      stem:
-        "A stakeholder asks for conclusions beyond what your instrument can support. How do you respond?",
-      options: choices(
-        "Expand claims to satisfy them.",
-        "State limits clearly, propose additional data collection if needed, and align conclusions to evidence.",
-        "Use anecdotal evidence to bridge the gap.",
-        "Agree verbally but omit caveats from the report.",
-        [1, 4, 1, 1]
-      )
-    },
-    {
-      stem:
-        "You synthesize five sources with conflicting findings. What makes the synthesis academically sound?",
-      options: choices(
-        "Report only the majority opinion.",
-        "Compare methods, contexts, and quality; explain divergence and implications for practice.",
-        "Average numeric results across incompatible scales.",
-        "Select the newest paper as definitive.",
-        [1, 4, 1, 2]
-      )
-    }
-  ];
+  function programCategoryStems(categoryName) {
+    return [
+      "I confidently apply " + categoryName + " knowledge when completing tasks in my field.",
+      "I can explain essential " + categoryName + " ideas to others without heavy preparation.",
+      "When I face an unfamiliar " + categoryName + " challenge, I know how to learn and verify what I need.",
+      "I seek feedback on my " + categoryName + " work and use it to improve."
+    ];
+  }
 
-  /**
-   * Program-specific scenario banks: each category has five { stem, options } entries.
-   * options = return value of choices(...)
-   */
-  var SCENARIO_BANKS = {};
-
-  SCENARIO_BANKS.BSCT = {
-    Programming: [
-      {
-        stem:
-          "A legacy payroll module throws intermittent null-pointer errors under load. Logs point to a shared cache key. What do you do first?",
-        options: choices(
-          "Restart servers nightly without tracing.",
-          "Reproduce under profiling, inspect concurrency around the cache, and add targeted synchronization or revision of key strategy.",
-          "Disable caching entirely in production.",
-          "Mask errors in the UI so users stop reporting them.",
-          [2, 4, 1, 1]
-        )
-      },
-      {
-        stem:
-          "You inherit undocumented string-parsing routines used for enrollment imports. Requirements change weekly. What approach reduces long-term risk?",
-        options: choices(
-          "Patch regex per ticket indefinitely.",
-          "Introduce a documented schema, validation layer, and automated tests tied to sample files.",
-          "Ask clients to send cleaner CSVs only.",
-          "Rewrite everything in a new language immediately without tests.",
-          [2, 4, 2, 1]
-        )
-      },
-      {
-        stem:
-          "Security audit flags unsanitized SQL fragments built from UI filters. What is the responsible remediation path?",
-        options: choices(
-          "Escape outputs only on the client.",
-          "Move to parameterized queries or an ORM, validate inputs, and add regression tests for injection attempts.",
-          "Hide the feature behind admin login.",
-          "Log warnings but ship on schedule.",
-          [1, 4, 2, 1]
-        )
-      },
-      {
-        stem:
-          "Your CI pipeline passes locally but fails on integration tests in cloud runners due to timing. What is the best next step?",
-        options: choices(
-          "Retry tests until green.",
-          "Stabilize async boundaries with deterministic waits or fakes, reduce shared global state, and record flaky-test metrics.",
-          "Disable integration tests in CI.",
-          "Run tests only before release.",
-          [2, 4, 1, 2]
-        )
-      },
-      {
-        stem:
-          "Product asks for a quick feature that doubles memory use on small devices. Engineering suspects leak-prone patterns. How do you proceed?",
-        options: choices(
-          "Ship first and profile later.",
-          "Prototype under memory constraints, measure allocations, and negotiate scope based on evidence.",
-          "Lower quality settings without measuring impact.",
-          "Increase device minimums in marketing copy only.",
-          [1, 4, 2, 2]
-        )
-      }
+  var HARD_CROSS_STEMS = {
+    "Math & Statistics": [
+      "I interpret numbers, tables, and basic statistics correctly when reviewing information.",
+      "I question assumptions behind figures before using them in decisions or reports.",
+      "I use mathematical or statistical reasoning appropriately in my professional context."
     ],
-    Hardware: [
-      {
-        stem:
-          "Workstations randomly power-cycle after a firmware push. Rollback is possible but delays security patches. What is the disciplined response?",
-        options: choices(
-          "Disable automatic updates permanently.",
-          "Isolate affected models, reproduce with logging, verify PSU and thermal headroom, stage a tested firmware path before fleet rollout.",
-          "Replace all PSUs immediately across the site.",
-          "Ignore until warranty expires.",
-          [1, 4, 2, 2]
-        )
-      },
-      {
-        stem:
-          "A lab shows Ethernet collisions and late collisions on an older hub-style segment. Modern switches are available. What should you recommend?",
-        options: choices(
-          "Add repeaters to boost signal.",
-          "Replace collision-domain gear with switched segments, verify cabling category, and validate port speeds.",
-          "Lower MTU on all hosts.",
-          "Turn off flow control everywhere.",
-          [1, 4, 2, 1]
-        )
-      },
-      {
-        stem:
-          "New GPUs draw more power than labeled rack circuits allow during simultaneous training jobs. What mitigates risk before scaling?",
-        options: choices(
-          "Use extension cords across circuits.",
-          "Model peak draw per PDU, enforce job schedulers or power caps, and upgrade distribution where sustained peaks exceed safe margins.",
-          "Throttle CPUs instead of GPUs arbitrarily.",
-          "Run only during off-hours without measurement.",
-          [1, 4, 3, 2]
-        )
-      },
-      {
-        stem:
-          "Field tablets fail after humidity exposure even though IP rating matches vendor claims. What investigation comes first?",
-        options: choices(
-          "Blame users and close tickets.",
-          "Verify gasket integrity on repaired units, environmental logs, and whether accessories compromise seals.",
-          "Switch brands without root-cause review.",
-          "Apply conformal coat ad hoc to everything.",
-          [1, 4, 2, 2]
-        )
-      },
-      {
-        stem:
-          "Memory diagnostics show intermittent single-bit errors only under heat soak. Warranty RAM passes vendor quick tests. What next?",
-        options: choices(
-          "Mark systems good and return to service.",
-          "Run extended memtests under thermal load, log ECC stats if available, and replace modules showing correlated errors.",
-          "Disable ECC to silence logs.",
-          "Underclock CPUs globally.",
-          [1, 4, 2, 2]
-        )
-      }
-    ],
-    Networking: [
-      {
-        stem:
-          "After VLAN changes, one subnet can reach the gateway but not peer subnets. ACLs are suspected. What is the structured check?",
-        options: choices(
-          "Ping random internet hosts.",
-          "Verify SVIs, trunk allowed VLANs, routing tables, and ACL line order with traceroute to each hop boundary.",
-          "Reboot all switches.",
-          "Assign static IPs on clients without coordination.",
-          [1, 4, 2, 2]
-        )
-      },
-      {
-        stem:
-          "DNS intermittently resolves external sites to stale addresses after ISP failover. Internal DNS forwards public queries. What fixes root cause?",
-        options: choices(
-          "Flush caches manually hourly.",
-          "Reduce TTL oversights, align forwarders with health checks, and validate resolver bonding during failover tests.",
-          "Hardcode hosts files on clients.",
-          "Block DNS logging to reduce noise.",
-          [1, 4, 2, 2]
-        )
-      },
-      {
-        stem:
-          "Wireless VoIP roams poorly between APs on same SSID. Controller shows sticky clients and overlapping channels. What do you adjust?",
-        options: choices(
-          "Raise transmit power on all APs maximum.",
-          "Tune roaming thresholds, channel plan, and minimum RSSI to reduce stickiness while avoiding overlap.",
-          "Disable 5 GHz.",
-          "Add SSIDs per floor only.",
-          [1, 4, 3, 2]
-        )
-      },
-      {
-        stem:
-          "Penetration test finds exposed management interfaces on a VLAN reachable from student Wi-Fi. What remediation aligns with least privilege?",
-        options: choices(
-          "Change passwords quarterly only.",
-          "Segment management plane, restrict source IPs, enforce jump hosts, and verify with periodic scans.",
-          "Hide SSID names.",
-          "Disable student Wi-Fi.",
-          [1, 4, 3, 2]
-        )
-      },
-      {
-        stem:
-          "Satellite link shows high latency but low packet loss; interactive apps suffer. What practical mitigation helps most?",
-        options: choices(
-          "Increase bandwidth blindly.",
-          "Apply QoS, optimize protocol chatter, cache where safe, and tune buffers with realistic RTT models.",
-          "Disable encryption to save bytes.",
-          "Move servers without measuring RTT paths.",
-          [2, 4, 2, 1]
-        )
-      }
-    ],
-    "Web Design": [
-      {
-        stem:
-          "Homepage hero images tank Largest Contentful Paint on mobile. Design insists on full-bleed uncompressed PNGs. What path balances UX and brand?",
-        options: choices(
-          "Ignore metrics if brand objects.",
-          "Serve responsive sources with modern formats, prioritize visible hero load, and validate with field and lab data.",
-          "Remove all images.",
-          "Load HD video backgrounds instead.",
-          [2, 4, 1, 1]
-        )
-      },
-      {
-        stem:
-          "Keyboard users cannot reach modal dialogs because focus stays behind overlay. Which fix is standards-aligned?",
-        options: choices(
-          "Remove keyboard shortcuts.",
-          "Trap focus within the modal, restore on close, and ensure visible focus order per WCAG patterns.",
-          "Hide modals from screen readers only.",
-          "Use positive tabindex on everything.",
-          [1, 4, 2, 1]
-        )
-      },
-      {
-        stem:
-          "A/B test shows higher clicks on a deceptive label but accessibility advisors flag misleading copy. What should product do?",
-        options: choices(
-          "Ship the winning variant anyway.",
-          "Reject manipulative patterns; iterate honest copy with usability testing that includes diverse users.",
-          "Show deceptive copy only to mobile users.",
-          "Measure clicks only, exclude assistive tech sessions.",
-          [1, 4, 3, 1]
-        )
-      },
-      {
-        stem:
-          "Design system drift causes six button styles with conflicting hover states. Maintenance cost spikes. What stabilizes the UI?",
-        options: choices(
-          "Freeze new pages.",
-          "Codify tokens, components, and lint rules in CI; migrate incrementally with ownership.",
-          "Let each squad choose frameworks freely.",
-          "Inline CSS per page for speed.",
-          [2, 4, 3, 2]
-        )
-      },
-      {
-        stem:
-          "Client demands autoplaying promotional audio on landing. Which response respects users and policy?",
-        options: choices(
-          "Autoplay muted with clear unmute control and pause-on-tab-hidden behavior.",
-          "Autoplay loud audio on entry.",
-          "Move audio to second page to bypass blockers.",
-          "Use invisible audio elements.",
-          [4, 1, 1, 1]
-        )
-      }
-    ],
-    "Graphic Design": [
-      {
-        stem:
-          "Print supplier rejects artwork for thin strokes below minimum weight at poster scale. Digital proof looked fine. What prevents rework?",
-        options: choices(
-          "Upscale raster proofs only.",
-          "Confirm bleed, stroke scaling rules, and vendor ICC profiles before finalizing vector masters.",
-          "Switch to RGB exports for vibrancy.",
-          "Rasterize everything to JPEG maximum compression.",
-          [2, 4, 2, 1]
-        )
-      },
-      {
-        stem:
-          "Brand palette fails WCAG contrast on several secondary backgrounds. Marketing wants exact hues. What is the constructive move?",
-        options: choices(
-          "Ignore contrast for secondary UI.",
-          "Adjust lightness systematically, document accessible pairs, and involve marketing in approved alternates.",
-          "Use smaller text so contrast rules relax.",
-          "Drop accessibility checks for alumni pages.",
-          [1, 4, 2, 1]
-        )
-      },
-      {
-        stem:
-          "Photo assets include recognizable minors without releases in archival folders. The campaign timeline is tight. What is compliant?",
-        options: choices(
-          "Blur faces slightly.",
-          "Remove or replace unreleased assets; seek releases if originals are essential.",
-          "Crop tightly to hide faces.",
-          "Use photos only in PDFs.",
-          [1, 4, 3, 1]
-        )
-      },
-      {
-        stem:
-          "Motion guidelines disagree on easing curves; some animations exceed 300 ms for critical UI. What aligns UX and accessibility?",
-        options: choices(
-          "Let designers choose freely per ticket.",
-          "Define motion tokens, respect prefers-reduced-motion, and cap durations for essential interactions.",
-          "Disable all animation.",
-          "Slow animations to 2s for emphasis everywhere.",
-          [2, 4, 3, 2]
-        )
-      },
-      {
-        stem:
-          "Infographic data came from a student blog without verification. Leadership likes the layout. What should you insist on?",
-        options: choices(
-          "Ship with a disclaimer only.",
-          "Replace with verified sources and annotate methodology; revise layout after facts change.",
-          "Anonymize labels to hide sources.",
-          "Copy Wikipedia tables verbatim.",
-          [1, 4, 2, 1]
-        )
-      }
+    "Data & Technical Skill": [
+      "I use digital tools and data resources relevant to my role effectively.",
+      "I organize technical work so others can follow, audit, or reuse it.",
+      "I keep core technical skills current for the standards expected in my profession."
     ]
   };
 
-  /**
-   * Generator for tracks that reuse parallel structure: builds plausible situational MCQs from seeds.
-   * Keeps file smaller while remaining scenario-based (not direct self-rating).
-   */
-  function generatedCategoryQuestions(trackKey, categoryName, verbPack) {
-    var stems = [
-      "During a tight deadline, " +
-        verbPack.context +
-        " Your stakeholder expects a defensible decision. What is the strongest professional move?",
-      "A teammate proposes a shortcut that improves speed but weakens traceability for " +
-        categoryName +
-        ". How do you respond?",
-      "Evidence from two mentors conflicts about prioritizing work in " +
-        categoryName +
-        ". What process reduces bias?",
-      "Resources shrink mid-project for outcomes tied to " +
-        categoryName +
-        ". Where should you cut last?",
-      "Quality review surfaces recurring gaps in " +
-        categoryName +
-        ". What systemic improvement comes first?"
-    ];
-    var outs = [];
-    for (var i = 0; i < 5; i++) {
-      outs.push({
-        stem: stems[i],
-        options: choices(
-          "Proceed without documenting assumptions.",
-          verbPack.strong[i],
-          "Privately blame individuals in chat.",
-          "Stop measurement to avoid bad news.",
-          [1, 4, 1, 1]
-        )
-      });
-    }
-    return outs;
-  }
-
-  var VERB_PACKS = {
-    MM: {
-      context: "customer segments disagree on message tests and channel ROI looks noisy.",
-      strong: [
-        "Align on metrics definitions, run disciplined experiments with controls, and document learning across segments.",
-        "Insist on ethical targeting and transparent success metrics before scaling spend.",
-        "Facilitate structured debate with data slices everyone agrees are valid.",
-        "Protect brand promises and learning budget before vanity placements.",
-        "Introduce a blameless retrospective tied to metrics and customer evidence."
-      ]
-    },
-    OM: {
-      context: "throughput improved locally but end-to-end lead time worsened after a local optimization.",
-      strong: [
-        "Map the full value stream, identify bottlenecks systemically, and tune WIP limits based on evidence.",
-        "Standardize work instructions with frontline input and measure variation.",
-        "Use structured root-cause sessions instead of ad hoc fixes.",
-        "Prioritize constraints that control overall delivery, not busy local cells.",
-        "Stand up visual management with cadence reviews tied to customer deadlines."
-      ]
-    },
-    FM: {
-      context: "cash forecasts diverge from actuals after policy changes you did not document.",
-      strong: [
-        "Rebuild assumptions collaboratively, reconcile ledgers, and publish scenario ranges with controls.",
-        "Tighten approval workflows where variances cluster and add detective controls.",
-        "Separate one-off items from recurring drivers before repricing risk.",
-        "Escalate policy gaps with finance leadership using reconciled evidence.",
-        "Instrument monthly variance rituals with accountable owners."
-      ]
-    },
-    EN: {
-      context: "learners struggle to cite textual evidence in argumentative essays.",
-      strong: [
-        "Model close-reading routines, scaffold prompts, and assess drafts against explicit rubrics.",
-        "Differentiate mentor texts by readiness while keeping standards constant.",
-        "Use formative checks that reveal misunderstanding early.",
-        "Balance fluency practice with structured revision cycles.",
-        "Coach peer feedback protocols grounded in criteria."
-      ]
-    },
-    MA: {
-      context: "students apply formulas without explaining structure and fail unfamiliar problems.",
-      strong: [
-        "Lead with reasoning routines, multiple representations, and error-analysis talks.",
-        "Sequence tasks from concrete to abstract with purposeful variation.",
-        "Use formative probes that reward justification, not answer-only speed.",
-        "Align remediation to conceptual gaps surfaced by student explanations.",
-        "Collaborate across grades to align prerequisite expectations."
-      ]
-    },
-    EC: {
-      context: "families report inconsistent communication about child milestones.",
-      strong: [
-        "Co-create a concise developmental roadmap with translators and accessible formats.",
-        "Schedule predictable touchpoints and document agreed goals.",
-        "Partner with specialists using shared observation notes.",
-        "Train staff on culturally responsive family engagement.",
-        "Evaluate interventions using documented developmental checkpoints."
-      ]
-    },
-    EL: {
-      context: "literacy results lag while time-on-task in worksheets rises.",
-      strong: [
-        "Shift toward guided reading blocks with formative diagnostics and targeted groups.",
-        "Integrate writing across subjects with explicit strategy instruction.",
-        "Balance practice with metacognitive prompts visible to learners.",
-        "Align interventions to phonics data and comprehension checks.",
-        "Coach teachers on pacing guides tied to standards evidence."
-      ]
-    }
+  var SOFT_SKILL_STEMS = {
+    "Problem Solving": [
+      "I break complex problems into clear steps before choosing a solution.",
+      "I test ideas and adjust when my first approach does not work."
+    ],
+    Storytelling: [
+      "I present ideas with a clear beginning, structure, and takeaway for my audience.",
+      "I use examples and narrative to help others understand technical or abstract topics."
+    ],
+    Collaboration: [
+      "I contribute reliably on team tasks and follow through on shared commitments.",
+      "I listen to teammates and integrate their input when making group decisions."
+    ],
+    Curiosity: [
+      "I ask questions to deepen understanding before settling on an answer.",
+      "I explore new methods or perspectives related to my work without being asked."
+    ],
+    Communication: [
+      "I express my ideas clearly in writing and conversation for the situation at hand.",
+      "I check that others understood my message and clarify when needed."
+    ],
+    Creativity: [
+      "I propose original approaches when routine methods are not enough.",
+      "I combine ideas from different areas to improve outcomes in my work."
+    ]
   };
 
-  SCENARIO_BANKS["BSBA:MM"] = {};
-  TRACK_CATEGORY_NAMES["BSBA:MM"].forEach(function (cat, idx) {
-    var pack = VERB_PACKS.MM;
-    var rows = generatedCategoryQuestions("BSBA:MM", cat, pack);
-    /** tweak stems slightly per category to avoid duplicate feel */
-    rows.forEach(function (r, j) {
-      r.stem = "Context (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS["BSBA:MM"][cat] = rows;
-  });
-
-  SCENARIO_BANKS["BSBA:OM"] = {};
-  TRACK_CATEGORY_NAMES["BSBA:OM"].forEach(function (cat) {
-    var rows = generatedCategoryQuestions("BSBA:OM", cat, VERB_PACKS.OM);
-    rows.forEach(function (r) {
-      r.stem = "Context (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS["BSBA:OM"][cat] = rows;
-  });
-
-  SCENARIO_BANKS["BSBA:FM"] = {};
-  TRACK_CATEGORY_NAMES["BSBA:FM"].forEach(function (cat) {
-    var rows = generatedCategoryQuestions("BSBA:FM", cat, VERB_PACKS.FM);
-    rows.forEach(function (r) {
-      r.stem = "Context (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS["BSBA:FM"][cat] = rows;
-  });
-
-  SCENARIO_BANKS["BSED:EN"] = {};
-  TRACK_CATEGORY_NAMES["BSED:EN"].forEach(function (cat) {
-    var rows = generatedCategoryQuestions("BSED:EN", cat, VERB_PACKS.EN);
-    rows.forEach(function (r) {
-      r.stem = "Context (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS["BSED:EN"][cat] = rows;
-  });
-
-  SCENARIO_BANKS["BSED:MA"] = {};
-  TRACK_CATEGORY_NAMES["BSED:MA"].forEach(function (cat) {
-    var rows = generatedCategoryQuestions("BSED:MA", cat, VERB_PACKS.MA);
-    rows.forEach(function (r) {
-      r.stem = "Context (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS["BSED:MA"][cat] = rows;
-  });
-
-  SCENARIO_BANKS.BECED = {};
-  TRACK_CATEGORY_NAMES.BECED.forEach(function (cat) {
-    var rows = generatedCategoryQuestions("BECED", cat, VERB_PACKS.EC);
-    rows.forEach(function (r) {
-      r.stem = "Early childhood (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS.BECED[cat] = rows;
-  });
-
-  SCENARIO_BANKS.BEED = {};
-  TRACK_CATEGORY_NAMES.BEED.forEach(function (cat) {
-    var rows = generatedCategoryQuestions("BEED", cat, VERB_PACKS.EL);
-    rows.forEach(function (r) {
-      r.stem = "Elementary (" + cat + "): " + r.stem;
-    });
-    SCENARIO_BANKS.BEED[cat] = rows;
-  });
-
-  function buildQuestion(trackKey, categoryName, catIndex, qIndex, stem, choiceList) {
+  function buildQuestion(trackKey, categoryName, catIndex, qIndex, stem, choiceList, skillType) {
     var safeKey = trackKey.replace(/:/g, "_");
     return {
       id: safeKey + "_c" + catIndex + "_q" + qIndex,
       course: trackKey,
       category: categoryName,
+      skillType: skillType || (SOFT_SKILL_CATEGORIES.indexOf(categoryName) >= 0 ? "soft" : "hard"),
       question: stem,
-      type: "mcq",
+      type: "likert",
       choices: choiceList
     };
   }
@@ -649,28 +181,59 @@
   function alsGetQuestionsForTrack(trackKey) {
     var cats = TRACK_CATEGORY_NAMES[trackKey];
     if (!cats) return [];
-    var bank = SCENARIO_BANKS[trackKey];
-    if (!bank) return [];
     var list = [];
-    for (var ci = 0; ci < 5; ci++) {
-      var catName = cats[ci];
-      var rows = bank[catName];
-      if (!rows || rows.length !== 5) continue;
-      for (var qi = 0; qi < 5; qi++) {
-        var row = rows[qi];
-        list.push(buildQuestion(trackKey, catName, ci, qi, row.stem, row.options));
+    var ci;
+    var qi;
+    var catName;
+    var stems;
+
+    for (ci = 0; ci < 5; ci++) {
+      catName = cats[ci];
+      stems = programCategoryStems(catName);
+      for (qi = 0; qi < stems.length; qi++) {
+        list.push(
+          buildQuestion(trackKey, catName, ci, qi, stems[qi], frequencyChoices(), "hard")
+        );
       }
     }
-    for (var ri = 0; ri < RESEARCH_SKILL_SCENARIOS.length; ri++) {
-      var rs = RESEARCH_SKILL_SCENARIOS[ri];
-      list.push(
-        buildQuestion(trackKey, "Research Skills", 5, ri, rs.stem, rs.options)
-      );
-    }
+
+    HARD_CROSS_CATEGORIES.forEach(function (crossCat, crossIdx) {
+      stems = HARD_CROSS_STEMS[crossCat] || [];
+      for (qi = 0; qi < stems.length; qi++) {
+        list.push(
+          buildQuestion(
+            trackKey,
+            crossCat,
+            10 + crossIdx,
+            qi,
+            stems[qi],
+            frequencyChoices(),
+            "hard"
+          )
+        );
+      }
+    });
+
+    SOFT_SKILL_CATEGORIES.forEach(function (softCat, softIdx) {
+      stems = SOFT_SKILL_STEMS[softCat] || [];
+      for (qi = 0; qi < stems.length; qi++) {
+        list.push(
+          buildQuestion(
+            trackKey,
+            softCat,
+            20 + softIdx,
+            qi,
+            stems[qi],
+            frequencyChoices(),
+            "soft"
+          )
+        );
+      }
+    });
+
     return list;
   }
 
-  /** Category means (1-4 scale) and overall mean across categories. */
   function alsComputeCategoryScores(questions, responsesByQuestionId) {
     var byCat = {};
     questions.forEach(function (q) {
@@ -701,10 +264,37 @@
     return { byCategory: scores, overall: overall };
   }
 
-  /**
-   * Maps user category performance to abstract dimensions, compares to program ideals,
-   * returns ranked recommendations. Uses completed assessment track for context only.
-   */
+  function alsSplitHardSoftScores(categoryScores) {
+    var hard = {};
+    var soft = {};
+    Object.keys(categoryScores || {}).forEach(function (cat) {
+      if (SOFT_SKILL_CATEGORIES.indexOf(cat) >= 0) {
+        soft[cat] = categoryScores[cat];
+      } else {
+        hard[cat] = categoryScores[cat];
+      }
+    });
+    return { hard: hard, soft: soft };
+  }
+
+  function alsHardSoftMeans(categoryScores) {
+    var split = alsSplitHardSoftScores(categoryScores);
+    function meanOf(obj) {
+      var keys = Object.keys(obj);
+      if (!keys.length) return null;
+      var sum = keys.reduce(function (s, k) {
+        return s + Number(obj[k]);
+      }, 0);
+      return Number((sum / keys.length).toFixed(2));
+    }
+    return {
+      hardMean: meanOf(split.hard),
+      softMean: meanOf(split.soft),
+      hard: split.hard,
+      soft: split.soft
+    };
+  }
+
   var DIM = ["technical", "business", "operations", "pedagogy", "research"];
 
   var PROGRAM_TARGETS = {
@@ -724,7 +314,6 @@
   };
 
   function normalizeScores01(categoryScores) {
-    /** Map 1-4 Likert to 0-1 */
     var o = {};
     Object.keys(categoryScores).forEach(function (k) {
       o[k] = Math.max(0, Math.min(1, (Number(categoryScores[k]) - 1) / 3));
@@ -736,7 +325,6 @@
     var cats = TRACK_CATEGORY_NAMES[trackKey];
     if (!cats) return { technical: 0.2, business: 0.2, operations: 0.2, pedagogy: 0.2, research: 0.2 };
     var v = { technical: 0, business: 0, operations: 0, pedagogy: 0, research: 0 };
-    var wSum = 0;
     cats.forEach(function (name) {
       var val = normalized[name];
       if (val == null) return;
@@ -744,11 +332,11 @@
       DIM.forEach(function (d) {
         v[d] += val * (w[d] || 0);
       });
-      wSum += 1;
     });
-    var rs = normalized["Research Skills"];
-    if (rs != null) v.research += rs * 0.65;
-    /** soften if only research present */
+    var mathVal = normalized["Math & Statistics"];
+    if (mathVal != null) v.research += mathVal * 0.35;
+    var dataVal = normalized["Data & Technical Skill"];
+    if (dataVal != null) v.technical += dataVal * 0.45;
     DIM.forEach(function (d) {
       if (v[d] > 1) v[d] = 1;
     });
@@ -757,6 +345,12 @@
 
   function mapCategoryToVector(trackKey, categoryName) {
     var base = { technical: 0.2, business: 0.2, operations: 0.2, pedagogy: 0.2, research: 0.2 };
+    if (categoryName === "Math & Statistics") {
+      return { technical: 0.35, business: 0.15, operations: 0.1, pedagogy: 0.1, research: 0.3 };
+    }
+    if (categoryName === "Data & Technical Skill") {
+      return { technical: 0.65, business: 0.1, operations: 0.12, pedagogy: 0.05, research: 0.08 };
+    }
     if (trackKey === "BSCT") {
       if (categoryName === "Programming" || categoryName === "Hardware" || categoryName === "Networking")
         return { technical: 0.72, business: 0.06, operations: 0.14, pedagogy: 0.04, research: 0.04 };
@@ -825,8 +419,8 @@
     var topProgram = ranked[0];
     var topMajor = majors[0];
     var narrative =
-      "Recommendations compare your category profile (mapped to skill dimensions) with typical program emphasis. " +
-      "Use them as guidance alongside advising—not as a sole placement decision.";
+      "Recommendations compare your hard-skill profile (mapped to skill dimensions) with typical program emphasis. " +
+      "Soft-skill means are shown separately on your brain dashboard. Use results as guidance alongside advising.";
 
     return {
       overallScore: categoryScores,
@@ -839,9 +433,15 @@
     };
   }
 
+  global.ALSKILL_ASSESSMENT_ITEM_COUNT = 38;
+
   global.ALSKILL_COURSE_CATALOG = ALSKILL_COURSE_CATALOG;
   global.ALSKILL_TRACK_CATEGORY_NAMES = TRACK_CATEGORY_NAMES;
+  global.ALSKILL_SOFT_SKILL_CATEGORIES = SOFT_SKILL_CATEGORIES;
+  global.ALSKILL_HARD_CROSS_CATEGORIES = HARD_CROSS_CATEGORIES;
   global.alsGetQuestionsForTrack = alsGetQuestionsForTrack;
   global.alsComputeCategoryScores = alsComputeCategoryScores;
+  global.alsSplitHardSoftScores = alsSplitHardSoftScores;
+  global.alsHardSoftMeans = alsHardSoftMeans;
   global.alsRecommend = alsRecommend;
 })(typeof window !== "undefined" ? window : globalThis);

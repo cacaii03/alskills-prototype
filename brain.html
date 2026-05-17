@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skills Brain Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d0e10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  .scene {
+    position: relative;
+    width: 760px;
+    height: 600px;
+  }
+
+  .glow-teal {
+    position: absolute;
+    width: 340px; height: 340px;
+    background: radial-gradient(circle, rgba(32,210,160,0.13) 0%, transparent 70%);
+    top: 60px; left: 30px;
+    border-radius: 50%;
+    animation: floatA 7s ease-in-out infinite alternate;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  .glow-amber {
+    position: absolute;
+    width: 340px; height: 340px;
+    background: radial-gradient(circle, rgba(244,167,40,0.12) 0%, transparent 70%);
+    top: 60px; right: 30px;
+    border-radius: 50%;
+    animation: floatB 9s ease-in-out infinite alternate;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+
+  .scene.hover-hard .glow-teal  { opacity: 2.5; }
+  .scene.hover-soft .glow-amber { opacity: 2.5; }
+
+  @keyframes floatA { from{transform:translate(0,0)} to{transform:translate(10px,18px)} }
+  @keyframes floatB { from{transform:translate(0,0)} to{transform:translate(-14px,10px)} }
+
+  svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: visible;
+  }
+
+  .pill {
+    opacity: 0;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    cursor: pointer;
+  }
+  .pill.visible { opacity: 1; }
+
+  .pill rect  { transition: fill 0.25s, stroke 0.25s, filter 0.25s; }
+  .pill text  { transition: fill 0.25s; pointer-events: none; }
+  .pill circle{ transition: r 0.25s, opacity 0.25s; }
+  .pill line  { transition: stroke 0.25s, stroke-width 0.25s; }
+
+  .pill.active-hard rect {
+    fill: rgba(32,210,160,0.28) !important;
+    stroke: rgba(32,210,160,1) !important;
+    filter: drop-shadow(0 0 10px rgba(32,210,160,0.65));
+  }
+  .pill.active-hard text  { fill: #ffffff !important; }
+  .pill.active-hard line  { stroke: rgba(32,210,160,0.95) !important; stroke-width: 2px !important; }
+
+  .pill.active-soft rect {
+    fill: rgba(244,167,40,0.28) !important;
+    stroke: rgba(244,167,40,1) !important;
+    filter: drop-shadow(0 0 10px rgba(244,167,40,0.65));
+  }
+  .pill.active-soft text  { fill: #ffffff !important; }
+  .pill.active-soft line  { stroke: rgba(244,167,40,0.95) !important; stroke-width: 2px !important; }
+
+  @keyframes breathe {
+    0%,100% { transform: scale(1); }
+    50%      { transform: scale(1.012); }
+  }
+  .brain-group {
+    transform-origin: 380px 300px;
+    animation: breathe 5s ease-in-out infinite;
+  }
+
+  #lobe-left, #lobe-right {
+    transition: filter 0.35s, opacity 0.35s;
+  }
+  .scene.hover-hard #lobe-left  { filter: drop-shadow(0 0 22px rgba(32,210,160,0.6)) brightness(1.18); }
+  .scene.hover-soft #lobe-right { filter: drop-shadow(0 0 22px rgba(244,167,40,0.6)) brightness(1.18); }
+  .scene.hover-hard #lobe-right { opacity: 0.45; }
+  .scene.hover-soft #lobe-left  { opacity: 0.45; }
+
+  @keyframes fadeLabel {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .label-hard  { animation: fadeLabel 0.8s ease forwards 1.2s; opacity: 0; }
+  .label-soft  { animation: fadeLabel 0.8s ease forwards 1.4s; opacity: 0; }
+  .label-title { animation: fadeLabel 0.9s ease forwards 0.3s; opacity: 0; }
+
+  @keyframes ripple {
+    from { r: 4;  opacity: 0.9; stroke-width: 2; }
+    to   { r: 32; opacity: 0;   stroke-width: 0.5; }
+  }
+  .ripple-circle { animation: ripple 0.6s ease-out forwards; }
+
+  #tooltip {
+    position: absolute;
+    background: rgba(20,22,26,0.97);
+    border: 1px solid rgba(255,255,255,0.13);
+    color: rgba(255,255,255,0.85);
+    font-size: 11.5px;
+    padding: 7px 13px;
+    border-radius: 10px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+    line-height: 1.5;
+    z-index: 10;
+  }
+  #tooltip.show { opacity: 1; }
+
+  @keyframes scanH {
+    from { transform: translateY(0px);   opacity: 0.22; }
+    to   { transform: translateY(310px); opacity: 0; }
+  }
+  .scan { animation: scanH 1.5s linear infinite; }
+</style>
+</head>
+<body>
+
+<div class="scene" id="scene">
+  <div class="glow-teal"></div>
+  <div class="glow-amber"></div>
+  <div id="tooltip"></div>
+
+  <svg viewBox="0 0 760 600" xmlns="http://www.w3.org/2000/svg" id="main-svg">
+    <defs>
+      <radialGradient id="teal-grad" cx="35%" cy="40%" r="65%">
+        <stop offset="0%" stop-color="#25d4a0"/>
+        <stop offset="100%" stop-color="#0f8060"/>
+      </radialGradient>
+      <radialGradient id="amber-grad" cx="65%" cy="40%" r="65%">
+        <stop offset="0%" stop-color="#f7b733"/>
+        <stop offset="100%" stop-color="#c47a10"/>
+      </radialGradient>
+      <clipPath id="clip-left">
+        <rect x="0" y="0" width="380" height="600"/>
+      </clipPath>
+      <clipPath id="clip-right">
+        <rect x="380" y="0" width="380" height="600"/>
+      </clipPath>
+      <clipPath id="clip-lobe-left">
+        <path d="M380,175 C370,155 348,142 325,140 C298,138 275,148 258,162 C238,178 228,200 224,222 C218,248 222,270 214,292 C206,316 190,330 188,355 C186,378 196,398 212,412 C226,424 246,430 262,434 C278,438 296,438 312,436 C328,434 342,428 355,420 C364,414 372,406 378,396 C381,390 382,384 382,378 L382,175 Z"/>
+      </clipPath>
+      <clipPath id="clip-lobe-right">
+        <path d="M380,175 C390,155 412,142 435,140 C462,138 485,148 502,162 C522,178 532,200 536,222 C542,248 538,270 546,292 C554,316 570,330 572,355 C574,378 564,398 548,412 C534,424 514,430 498,434 C482,438 464,438 448,436 C432,434 418,428 405,420 C396,414 388,406 382,396 C381,390 380,384 380,378 L380,175 Z"/>
+      </clipPath>
+      <filter id="brain-shadow" x="-10%" y="-10%" width="120%" height="130%">
+        <feDropShadow dx="0" dy="12" stdDeviation="22" flood-color="#000" flood-opacity="0.5"/>
+      </filter>
+    </defs>
+
+    <!-- Title -->
+    <g class="label-title">
+      <text x="380" y="42" text-anchor="middle" fill="rgba(255,255,255,0.8)"
+            font-size="12" letter-spacing="4" font-weight="400"
+            font-family="'Segoe UI',system-ui,sans-serif">SKILLS OVERVIEW</text>
+    </g>
+
+    <!-- BRAIN -->
+    <g class="brain-group" filter="url(#brain-shadow)">
+
+      <!-- Left lobe -->
+      <path id="lobe-left" clip-path="url(#clip-left)"
+        d="M380,175 C370,155 348,142 325,140 C298,138 275,148 258,162 C238,178 228,200 224,222 C218,248 222,270 214,292 C206,316 190,330 188,355 C186,378 196,398 212,412 C226,424 246,430 262,434 C278,438 296,438 312,436 C328,434 342,428 355,420 C364,414 372,406 378,396 C381,390 382,384 382,378 L382,175 Z"
+        fill="url(#teal-grad)" opacity="0.96"/>
+
+      <!-- Scan shimmer left -->
+      <g clip-path="url(#clip-lobe-left)" id="scan-left" style="opacity:0;transition:opacity 0.3s;">
+        <rect class="scan" x="150" y="140" width="230" height="7" rx="3.5" fill="rgba(127,255,212,0.3)"/>
+      </g>
+
+      <!-- Left sulci -->
+      <path clip-path="url(#clip-left)" d="M260,165 C252,185 248,205 252,225" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="3" stroke-linecap="round"/>
+      <path clip-path="url(#clip-left)" d="M225,240 C238,252 248,268 242,285" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="2.5" stroke-linecap="round"/>
+      <path clip-path="url(#clip-left)" d="M210,310 C225,322 232,338 228,356" fill="none" stroke="rgba(0,0,0,0.14)" stroke-width="2.5" stroke-linecap="round"/>
+      <path clip-path="url(#clip-left)" d="M290,152 C286,168 280,182 282,198" fill="none" stroke="rgba(0,0,0,0.12)" stroke-width="2" stroke-linecap="round"/>
+      <path clip-path="url(#clip-left)" d="M320,148 C310,158 302,172 306,188" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2" stroke-linecap="round"/>
+
+      <!-- Right lobe -->
+      <path id="lobe-right" clip-path="url(#clip-right)"
+        d="M380,175 C390,155 412,142 435,140 C462,138 485,148 502,162 C522,178 532,200 536,222 C542,248 538,270 546,292 C554,316 570,330 572,355 C574,378 564,398 548,412 C534,424 514,430 498,434 C482,438 464,438 448,436 C432,434 418,428 405,420 C396,414 388,406 382,396 C381,390 380,384 380,378 L380,175 Z"
+        fill="url(#amber-grad)" opacity="0.96"/>
+
+      <!-- Scan shimmer right -->
+      <g clip-path="url(#clip-lobe-right)" id="scan-right" style="opacity:0;transition:opacity 0.3s;">
+        <rect class="scan" x="380" y="140" width="210" height="7" rx="3.5" fill="rgba(255,224,160,0.3)"/>
+      </g>
+
+      <!-- Right sulci -->
+      <path clip-path="url(#clip-right)" d="M500,165 C508,185 512,205 508,225" fill="none" stroke="rgba(0,0,0,0.16)" stroke-width="3" stroke-linecap="round"/>
+      <path clip-path="url(#clip-right)" d="M535,242 C522,254 512,270 518,287" fill="none" stroke="rgba(0,0,0,0.14)" stroke-width="2.5" stroke-linecap="round"/>
+      <path clip-path="url(#clip-right)" d="M550,312 C535,324 528,340 532,358" fill="none" stroke="rgba(0,0,0,0.13)" stroke-width="2.5" stroke-linecap="round"/>
+      <path clip-path="url(#clip-right)" d="M470,152 C474,168 480,182 478,198" fill="none" stroke="rgba(0,0,0,0.11)" stroke-width="2" stroke-linecap="round"/>
+      <path clip-path="url(#clip-right)" d="M440,148 C450,158 458,172 454,188" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="2" stroke-linecap="round"/>
+
+      <!-- Invisible hover hit areas -->
+      <path id="hover-left"
+        d="M380,175 C370,155 348,142 325,140 C298,138 275,148 258,162 C238,178 228,200 224,222 C218,248 222,270 214,292 C206,316 190,330 188,355 C186,378 196,398 212,412 C226,424 246,430 262,434 C278,438 296,438 312,436 C328,434 342,428 355,420 C364,414 372,406 378,396 C381,390 382,384 382,378 L382,175 Z"
+        fill="transparent" style="cursor:pointer"/>
+      <path id="hover-right"
+        d="M380,175 C390,155 412,142 435,140 C462,138 485,148 502,162 C522,178 532,200 536,222 C542,248 538,270 546,292 C554,316 570,330 572,355 C574,378 564,398 548,412 C534,424 514,430 498,434 C482,438 464,438 448,436 C432,434 418,428 405,420 C396,414 388,406 382,396 C381,390 380,384 380,378 L380,175 Z"
+        fill="transparent" style="cursor:pointer"/>
+
+      <!-- Brain stem -->
+      <path d="M355,430 C352,450 348,465 344,480 C340,495 340,505 352,512 C364,519 396,519 408,512 C420,505 420,495 416,480 C412,465 408,450 405,430 Z" fill="#1a4d3a" opacity="0.85"/>
+      <path d="M365,430 C363,448 360,462 358,476 C363,482 380,484 397,476 C395,462 392,448 390,430 Z" fill="rgba(255,255,255,0.05)"/>
+
+      <!-- Center divider -->
+      <line x1="380" y1="162" x2="380" y2="432" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-dasharray="5 4"/>
+    </g>
+
+    <!-- Ripple layer -->
+    <g id="ripple-layer"></g>
+
+    <!-- ===== HARD SKILL PILLS ===== -->
+
+    <g class="pill hard-pill" id="pill-h1" style="transform:translateX(-20px)"
+       data-tip="Domain knowledge &amp; deep specialization">
+      <line x1="248" y1="200" x2="152" y2="210" stroke="rgba(32,210,160,0.4)" stroke-width="1"/>
+      <circle cx="248" cy="200" r="3" fill="rgba(32,210,160,0.7)"/>
+      <rect x="30" y="194" width="120" height="30" rx="15" fill="rgba(15,80,60,0.9)" stroke="rgba(32,210,160,0.55)" stroke-width="1"/>
+      <text x="90" y="210" text-anchor="middle" fill="#7fffd4" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">🎓 Subject Expertise</text>
+    </g>
+
+    <g class="pill hard-pill" id="pill-h2" style="transform:translateX(-20px)"
+       data-tip="Quantitative analysis &amp; modeling">
+      <line x1="228" y1="278" x2="152" y2="278" stroke="rgba(32,210,160,0.4)" stroke-width="1"/>
+      <circle cx="228" cy="278" r="3" fill="rgba(32,210,160,0.7)"/>
+      <rect x="30" y="262" width="120" height="30" rx="15" fill="rgba(15,80,60,0.9)" stroke="rgba(32,210,160,0.55)" stroke-width="1"/>
+      <text x="90" y="278" text-anchor="middle" fill="#7fffd4" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">📊 Math &amp; Statistics</text>
+    </g>
+
+    <g class="pill hard-pill" id="pill-h3" style="transform:translateX(-20px)"
+       data-tip="Systems, tools &amp; engineering craft">
+      <line x1="218" y1="360" x2="152" y2="360" stroke="rgba(32,210,160,0.4)" stroke-width="1"/>
+      <circle cx="218" cy="360" r="3" fill="rgba(32,210,160,0.7)"/>
+      <rect x="30" y="344" width="120" height="30" rx="15" fill="rgba(15,80,60,0.9)" stroke="rgba(32,210,160,0.55)" stroke-width="1"/>
+      <text x="90" y="360" text-anchor="middle" fill="#7fffd4" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">⚙️ Data &amp; Technical</text>
+    </g>
+
+    <!-- ===== SOFT SKILL PILLS ===== -->
+
+    <g class="pill soft-pill" id="pill-s1" style="transform:translateX(20px)"
+       data-tip="Critical thinking &amp; structured analysis">
+      <line x1="512" y1="193" x2="608" y2="193" stroke="rgba(244,167,40,0.4)" stroke-width="1"/>
+      <circle cx="512" cy="193" r="3" fill="rgba(244,167,40,0.7)"/>
+      <rect x="610" y="177" width="120" height="30" rx="15" fill="rgba(90,50,5,0.9)" stroke="rgba(244,167,40,0.55)" stroke-width="1"/>
+      <text x="670" y="193" text-anchor="middle" fill="#ffe0a0" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">💡 Problem Solving</text>
+    </g>
+
+    <g class="pill soft-pill" id="pill-s2" style="transform:translateX(20px)"
+       data-tip="Narrative craft &amp; persuasive communication">
+      <line x1="532" y1="243" x2="608" y2="243" stroke="rgba(244,167,40,0.4)" stroke-width="1"/>
+      <circle cx="532" cy="243" r="3" fill="rgba(244,167,40,0.7)"/>
+      <rect x="610" y="227" width="120" height="30" rx="15" fill="rgba(90,50,5,0.9)" stroke="rgba(244,167,40,0.55)" stroke-width="1"/>
+      <text x="670" y="243" text-anchor="middle" fill="#ffe0a0" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">📖 Story Telling</text>
+    </g>
+
+    <g class="pill soft-pill" id="pill-s3" style="transform:translateX(20px)"
+       data-tip="Teamwork, empathy &amp; shared goals">
+      <line x1="545" y1="295" x2="608" y2="295" stroke="rgba(244,167,40,0.4)" stroke-width="1"/>
+      <circle cx="545" cy="295" r="3" fill="rgba(244,167,40,0.7)"/>
+      <rect x="610" y="279" width="120" height="30" rx="15" fill="rgba(90,50,5,0.9)" stroke="rgba(244,167,40,0.55)" stroke-width="1"/>
+      <text x="670" y="295" text-anchor="middle" fill="#ffe0a0" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">🤝 Collaboration</text>
+    </g>
+
+    <g class="pill soft-pill" id="pill-s4" style="transform:translateX(20px)"
+       data-tip="Relentless learning &amp; open inquiry">
+      <line x1="548" y1="345" x2="608" y2="345" stroke="rgba(244,167,40,0.4)" stroke-width="1"/>
+      <circle cx="548" cy="345" r="3" fill="rgba(244,167,40,0.7)"/>
+      <rect x="610" y="329" width="120" height="30" rx="15" fill="rgba(90,50,5,0.9)" stroke="rgba(244,167,40,0.55)" stroke-width="1"/>
+      <text x="670" y="345" text-anchor="middle" fill="#ffe0a0" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">🔍 Curiosity</text>
+    </g>
+
+    <g class="pill soft-pill" id="pill-s5" style="transform:translateX(20px)"
+       data-tip="Clarity, listening &amp; clear expression">
+      <line x1="535" y1="393" x2="608" y2="393" stroke="rgba(244,167,40,0.4)" stroke-width="1"/>
+      <circle cx="535" cy="393" r="3" fill="rgba(244,167,40,0.7)"/>
+      <rect x="610" y="377" width="120" height="30" rx="15" fill="rgba(90,50,5,0.9)" stroke="rgba(244,167,40,0.55)" stroke-width="1"/>
+      <text x="670" y="393" text-anchor="middle" fill="#ffe0a0" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">💬 Communication</text>
+    </g>
+
+    <g class="pill soft-pill" id="pill-s6" style="transform:translateX(20px)"
+       data-tip="Innovation, ideation &amp; original thinking">
+      <line x1="505" y1="424" x2="608" y2="430" stroke="rgba(244,167,40,0.4)" stroke-width="1"/>
+      <circle cx="505" cy="424" r="3" fill="rgba(244,167,40,0.7)"/>
+      <rect x="610" y="414" width="120" height="30" rx="15" fill="rgba(90,50,5,0.9)" stroke="rgba(244,167,40,0.55)" stroke-width="1"/>
+      <text x="670" y="430" text-anchor="middle" fill="#ffe0a0" font-size="10.5"
+            font-family="'Segoe UI',system-ui,sans-serif" dominant-baseline="central" letter-spacing="0.3">🎨 Creativity</text>
+    </g>
+
+    <!-- ===== SECTION LABELS ===== -->
+    <g class="label-hard">
+      <circle cx="160" cy="132" r="5" fill="#20d2a0">
+        <animate attributeName="r" values="5;7;5" dur="3s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;0.5;1" dur="3s" repeatCount="indefinite"/>
+      </circle>
+      <text x="173" y="136" fill="#20d2a0" font-size="11" letter-spacing="2.5"
+            font-family="'Segoe UI',system-ui,sans-serif" font-weight="600" dominant-baseline="central">HARD SKILL</text>
+    </g>
+
+    <g class="label-soft">
+      <circle cx="537" cy="132" r="5" fill="#f4a728">
+        <animate attributeName="r" values="5;7;5" dur="3s" begin="1.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;0.5;1" dur="3s" begin="1.5s" repeatCount="indefinite"/>
+      </circle>
+      <text x="550" y="136" fill="#f4a728" font-size="11" letter-spacing="2.5"
+            font-family="'Segoe UI',system-ui,sans-serif" font-weight="600" dominant-baseline="central">SOFT SKILL</text>
+    </g>
+
+    <!-- ===== NEURON SPARKS ===== -->
+    <circle cx="298" cy="200" r="2.5" fill="rgba(255,255,255,0.7)">
+      <animate attributeName="opacity" values="0;1;0" dur="2.1s" begin="0.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="264" cy="258" r="2" fill="rgba(255,255,255,0.6)">
+      <animate attributeName="opacity" values="0;0.8;0" dur="1.7s" begin="1.1s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="310" cy="320" r="2" fill="rgba(255,255,255,0.5)">
+      <animate attributeName="opacity" values="0;0.9;0" dur="2.6s" begin="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="340" cy="230" r="1.5" fill="rgba(255,255,255,0.7)">
+      <animate attributeName="opacity" values="0;1;0" dur="1.9s" begin="1.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="280" cy="370" r="2" fill="rgba(255,255,255,0.5)">
+      <animate attributeName="opacity" values="0;0.7;0" dur="3.1s" begin="0.2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="462" cy="200" r="2.5" fill="rgba(255,255,255,0.7)">
+      <animate attributeName="opacity" values="0;1;0" dur="2.3s" begin="0.7s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="496" cy="260" r="2" fill="rgba(255,255,255,0.6)">
+      <animate attributeName="opacity" values="0;0.8;0" dur="1.8s" begin="0.3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="450" cy="330" r="2" fill="rgba(255,255,255,0.5)">
+      <animate attributeName="opacity" values="0;0.9;0" dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="420" cy="230" r="1.5" fill="rgba(255,255,255,0.7)">
+      <animate attributeName="opacity" values="0;1;0" dur="2.0s" begin="0.6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="480" cy="375" r="2" fill="rgba(255,255,255,0.5)">
+      <animate attributeName="opacity" values="0;0.7;0" dur="2.8s" begin="1.8s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Center pulse -->
+    <circle cx="380" cy="300" r="6" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.3)" stroke-width="1">
+      <animate attributeName="r" values="6;9;6" dur="4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="4s" repeatCount="indefinite"/>
+    </circle>
+  </svg>
+</div>
+
+<script>
+  const scene   = document.getElementById('scene');
+  const tooltip = document.getElementById('tooltip');
+  const scanL   = document.getElementById('scan-left');
+  const scanR   = document.getElementById('scan-right');
+  const hoverL  = document.getElementById('hover-left');
+  const hoverR  = document.getElementById('hover-right');
+  const rl      = document.getElementById('ripple-layer');
+  const svg     = document.getElementById('main-svg');
+
+  const hardPills = document.querySelectorAll('.hard-pill');
+  const softPills = document.querySelectorAll('.soft-pill');
+  const allPills  = [...hardPills, ...softPills];
+
+  // ── Staggered entrance ──
+  hardPills.forEach((el, i) => {
+    el.style.transform = 'translateX(-20px)';
+    setTimeout(() => { el.style.transform = 'translateX(0)'; el.classList.add('visible'); }, 800 + i * 200);
+  });
+  softPills.forEach((el, i) => {
+    el.style.transform = 'translateX(20px)';
+    setTimeout(() => { el.style.transform = 'translateX(0)'; el.classList.add('visible'); }, 900 + i * 160);
+  });
+
+  // ── Helpers ──
+  function activateSide(side) {
+    scene.classList.add(side === 'hard' ? 'hover-hard' : 'hover-soft');
+    (side === 'hard' ? scanL : scanR).style.opacity = '1';
+    (side === 'hard' ? hardPills : softPills).forEach(p => p.classList.add(side === 'hard' ? 'active-hard' : 'active-soft'));
+  }
+  function deactivateSide(side) {
+    scene.classList.remove(side === 'hard' ? 'hover-hard' : 'hover-soft');
+    (side === 'hard' ? scanL : scanR).style.opacity = '0';
+    (side === 'hard' ? hardPills : softPills).forEach(p => p.classList.remove(side === 'hard' ? 'active-hard' : 'active-soft'));
+  }
+  function dimOthers(except) {
+    allPills.forEach(p => { if (p !== except) p.style.opacity = '0.35'; });
+  }
+  function undimAll() {
+    allPills.forEach(p => { p.style.opacity = '1'; });
+  }
+
+  // ── Brain half hover ──
+  hoverL.addEventListener('mouseenter', () => activateSide('hard'));
+  hoverL.addEventListener('mouseleave', () => deactivateSide('hard'));
+  hoverR.addEventListener('mouseenter', () => activateSide('soft'));
+  hoverR.addEventListener('mouseleave', () => deactivateSide('soft'));
+
+  // ── Pill hover & tooltip ──
+  allPills.forEach(pill => {
+    const isHard = pill.classList.contains('hard-pill');
+    const ac = isHard ? 'active-hard' : 'active-soft';
+    const sc = isHard ? 'hover-hard' : 'hover-soft';
+    const scanEl = isHard ? scanL : scanR;
+
+    pill.addEventListener('mouseenter', () => {
+      isHovered = true;
+      pill.classList.add(ac);
+      scene.classList.add(sc);
+      scanEl.style.opacity = '1';
+      dimOthers(pill);
+      const tip = pill.getAttribute('data-tip');
+      if (tip) { tooltip.textContent = tip; tooltip.classList.add('show'); }
+    });
+
+    pill.addEventListener('mousemove', e => {
+      const r = scene.getBoundingClientRect();
+      let x = e.clientX - r.left + 14;
+      let y = e.clientY - r.top  - 40;
+      if (x + 190 > r.width) x = e.clientX - r.left - 190;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+    });
+
+    pill.addEventListener('mouseleave', () => {
+      isHovered = false;
+      pill.classList.remove(ac);
+      scene.classList.remove(sc);
+      scanEl.style.opacity = '0';
+      undimAll();
+      tooltip.classList.remove('show');
+    });
+
+    // Click ripple
+    pill.addEventListener('click', e => {
+      const r = svg.getBoundingClientRect();
+      const cx = (e.clientX - r.left) * (760 / r.width);
+      const cy = (e.clientY - r.top)  * (600 / r.height);
+      const color = isHard ? 'rgba(32,210,160,0.7)' : 'rgba(244,167,40,0.7)';
+      const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', '4');
+      c.setAttribute('fill', 'none'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', '2');
+      c.classList.add('ripple-circle');
+      rl.appendChild(c);
+      setTimeout(() => c.remove(), 650);
+    });
+  });
+
+  // ── Auto-cycle idle highlight ──
+  let cycleIdx = 0, cycleTimer = null, isHovered = false;
+
+  scene.addEventListener('mouseenter', () => { isHovered = true;  clearInterval(cycleTimer); clearAllHighlights(); });
+  scene.addEventListener('mouseleave', () => { isHovered = false; startCycle(); });
+
+  function clearAllHighlights() {
+    scene.classList.remove('hover-hard','hover-soft');
+    scanL.style.opacity = '0'; scanR.style.opacity = '0';
+    allPills.forEach(p => { p.classList.remove('active-hard','active-soft'); p.style.opacity = '1'; });
+  }
+
+  function startCycle() {
+    cycleTimer = setInterval(() => {
+      if (isHovered) return;
+      clearAllHighlights();
+      const p = allPills[cycleIdx % allPills.length];
+      const isH = p.classList.contains('hard-pill');
+      p.classList.add(isH ? 'active-hard' : 'active-soft');
+      scene.classList.add(isH ? 'hover-hard' : 'hover-soft');
+      (isH ? scanL : scanR).style.opacity = '0.5';
+      dimOthers(p);
+      cycleIdx++;
+    }, 1800);
+  }
+
+  setTimeout(startCycle, 2800);
+</script>
+
+</body>
+</html>
