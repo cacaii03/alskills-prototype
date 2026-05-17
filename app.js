@@ -114,6 +114,14 @@ function updateWizardPrintSummaryVisibility() {
   if (block) block.classList.toggle("hidden", !(locked && viewed));
 }
 
+function updateDashboardPrintVisibility() {
+  if (PAGE !== "home" || !state.currentUser) return;
+  const uid = state.currentUser.user_id;
+  const locked = hasOfficialAttemptDone(uid);
+  const block = document.getElementById("dashboardPrintBlock");
+  if (block) block.classList.toggle("hidden", !locked);
+}
+
 function hasOfficialAttemptDone(uid) {
   if (!uid) return false;
   try {
@@ -485,53 +493,30 @@ function buildAnonymousItemOutcomesSectionHtml(userId, trackKeyHint) {
       </div>`;
 }
 
+function buildPrintCategoryListHtml(map, emptyLabel) {
+  const rows = Object.entries(map || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([cat, val]) =>
+        `<li class="results-print-cat"><span class="results-print-cat__name">${escapeHtml(cat)}</span><span class="results-print-cat__score">${formatRubricOverFour(val)}</span></li>`
+    );
+  return rows.length ? rows.join("") : `<li class="results-print-cat results-print-cat--empty muted">${escapeHtml(emptyLabel)}</li>`;
+}
+
 /**
  * Full printable <article> HTML for one subject (shared by assessment-results page and alumni inline print).
  */
 function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overall) {
-  const tier = getRankTier(overall);
-  const level = buildPerformanceLevelLabel(overall);
-  const feedbackParas = buildImprovementFeedbackParagraphs(scores, overall);
-  const masteryT = typeof ALSKILL_MASTERY_THRESHOLD === "number" ? ALSKILL_MASTERY_THRESHOLD : 3.25;
   const trackKey = resolveAssessmentTrackKeyForUser(subjectId, subjectUser);
   const hardSoft =
-    typeof alsHardSoftMeans === "function" ? alsHardSoftMeans(scores) : { hardMean: null, softMean: null };
+    typeof alsHardSoftMeans === "function"
+      ? alsHardSoftMeans(scores)
+      : { hard: {}, soft: {}, hardMean: null, softMean: null };
   const hardMeanDisp = hardSoft.hardMean != null ? formatRubricOverFour(hardSoft.hardMean) : "—";
   const softMeanDisp = hardSoft.softMean != null ? formatRubricOverFour(hardSoft.softMean) : "—";
-
-  function categoryListHtml(map) {
-    return Object.entries(map || {})
-      .sort((a, b) => b[1] - a[1])
-      .map(([cat, val]) => {
-        const status = masteryStatusFromMean(val);
-        const statusCls =
-          status === "Mastered" ? "results-cat-status--mastered" : "results-cat-status--developing";
-        return `<li><span class="results-cat-name">${escapeHtml(cat)}</span><span class="results-cat-score">${formatRubricOverFour(val)}</span><span class="results-cat-status ${statusCls}">${escapeHtml(status)}</span></li>`;
-      })
-      .join("");
-  }
-
-  const hardCatsHtml =
-    hardSoft.hard && Object.keys(hardSoft.hard).length
-      ? categoryListHtml(hardSoft.hard)
-      : `<li class="muted">No hard-skill categories scored.</li>`;
-  const softCatsHtml =
-    hardSoft.soft && Object.keys(hardSoft.soft).length
-      ? categoryListHtml(hardSoft.soft)
-      : `<li class="muted">No soft-skill categories scored.</li>`;
-
-  const feedbackHtml = feedbackParas.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
-  const improveBullets = buildDashboardImprovementBullets(scores, overall);
-  const improveNextHtml =
-    improveBullets.length === 0
-      ? ""
-      : `<h2 class="results-doc__block-title">What to improve next</h2>
-      <div class="results-improve-wrap">
-        <ul class="results-improve-list">
-          ${improveBullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
-        </ul>
-      </div>`;
-  const itemOutcomesHtml = buildAnonymousItemOutcomesSectionHtml(subjectId, trackKey);
+  const overallDisp = formatRubricOverFour(overall);
+  const hardCatsHtml = buildPrintCategoryListHtml(hardSoft.hard, "No hard-skill categories scored.");
+  const softCatsHtml = buildPrintCategoryListHtml(hardSoft.soft, "No soft-skill categories scored.");
   const majorDisplay =
     subjectUser.major && String(subjectUser.major).trim() && subjectUser.major !== "-"
       ? String(subjectUser.major)
@@ -545,50 +530,40 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
       </dl>`;
 
   return `
-    <article class="results-doc">
-      <p class="results-doc__eyebrow">Skill assessment summary</p>
+    <article class="results-doc results-doc--print-summary">
+      <p class="results-doc__eyebrow">Skills self-assessment</p>
       <h1 class="results-doc__title">${escapeHtml(subjectUser.name)}</h1>
-      <p class="results-doc__meta">ALSKILL · Official 50-item skills self-assessment · Rubric: Always (4), Sometimes (3), Maybe (2), Never (1) · Category means as <strong>mean / 4.00</strong>${trackKey ? ` · Track: <strong>${escapeHtml(trackKey)}</strong>` : ""}</p>
+      <p class="results-doc__meta">ALSKILL · Official assessment · Means shown as <strong>mean / 4.00</strong>${trackKey ? ` · ${escapeHtml(trackKey)}` : ""}</p>
       ${identityHtml}
-      <p class="results-rubric-legend muted">Category <strong>Mastered</strong> when mean ≥ ${masteryT.toFixed(2)}; otherwise <strong>Developing</strong>. Brain dashboard labels use the same threshold.</p>
-      <div class="results-doc__grid">
-        <div class="results-stat">
-          <p class="results-stat__label">Rating</p>
-          <p class="results-stat__value">${escapeHtml(tier.label)}</p>
-          <p class="results-stat__hint">${escapeHtml(tier.blurb)}</p>
+      <div class="results-print-means" aria-label="Summary means">
+        <div class="results-print-mean results-print-mean--overall">
+          <p class="results-print-mean__label">Overall mean</p>
+          <p class="results-print-mean__value">${overallDisp}</p>
         </div>
-        <div class="results-stat">
-          <p class="results-stat__label">Overall mean</p>
-          <p class="results-stat__value">${formatRubricOverFour(overall)}</p>
-          <p class="results-stat__hint">Mean of all category means</p>
+        <div class="results-print-mean results-print-mean--hard">
+          <p class="results-print-mean__label">Hard skills mean</p>
+          <p class="results-print-mean__value">${hardMeanDisp}</p>
         </div>
-        <div class="results-stat">
-          <p class="results-stat__label">Hard skills mean</p>
-          <p class="results-stat__value">${hardMeanDisp}</p>
-          <p class="results-stat__hint">Program + research categories</p>
-        </div>
-        <div class="results-stat">
-          <p class="results-stat__label">Soft skills mean</p>
-          <p class="results-stat__value">${softMeanDisp}</p>
-          <p class="results-stat__hint">Six shared soft-skill themes</p>
-        </div>
-        <div class="results-stat">
-          <p class="results-stat__label">Proficiency band</p>
-          <p class="results-stat__value">${escapeHtml(level)}</p>
-          <p class="results-stat__hint">Institutional label</p>
+        <div class="results-print-mean results-print-mean--soft">
+          <p class="results-print-mean__label">Soft skills mean</p>
+          <p class="results-print-mean__value">${softMeanDisp}</p>
         </div>
       </div>
-      <h2 class="results-doc__block-title">Comments and improvement focus</h2>
-      <div class="results-feedback">${feedbackHtml}</div>
-      ${improveNextHtml}
-      <h2 class="results-doc__block-title">Hard skill categories</h2>
-      <ul class="results-categories results-categories--split">${hardCatsHtml}</ul>
-      <h2 class="results-doc__block-title">Soft skill categories</h2>
-      <ul class="results-categories results-categories--split">${softCatsHtml}</ul>
-      ${itemOutcomesHtml}
+      <div class="results-print-columns">
+        <section class="results-print-col results-print-col--hard">
+          <h2 class="results-print-col__title">Hard skills</h2>
+          <p class="results-print-col__hint muted">Program and research categories</p>
+          <ul class="results-print-cat-list">${hardCatsHtml}</ul>
+        </section>
+        <section class="results-print-col results-print-col--soft">
+          <h2 class="results-print-col__title">Soft skills</h2>
+          <p class="results-print-col__hint muted">Shared competency themes</p>
+          <ul class="results-print-cat-list">${softCatsHtml}</ul>
+        </section>
+      </div>
       <footer class="results-doc__footer">ALSKILL · ${escapeHtml(
         new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
-      )} · Official self-assessment benchmark (one attempt per alumni).</footer>
+      )} · Official self-assessment benchmark</footer>
     </article>`;
 }
 
@@ -637,10 +612,6 @@ async function openAlumniPrintableResultsPage() {
   const uid = state.currentUser.user_id;
   if (!hasOfficialAttemptDone(uid)) {
     showHomeToast("Printable results unlock after you finish your official assessment.", "error");
-    return;
-  }
-  if (!hasViewedResultsWizard(uid)) {
-    showHomeToast("Open your results in Test your skill (step 3), review your scores, then use Print official summary.", "error");
     return;
   }
   try {
@@ -723,6 +694,7 @@ function applyAssessmentLockUI() {
   if (navSkillMeta) navSkillMeta.textContent = locked ? "Results saved" : "One official attempt";
 
   updateWizardPrintSummaryVisibility();
+  updateDashboardPrintVisibility();
 }
 
 function bindAssessmentLockActions() {
@@ -1136,6 +1108,7 @@ async function initHomePage() {
     bindAssessmentLockActions();
     applyAssessmentLockUI();
     updateWizardPrintSummaryVisibility();
+  updateDashboardPrintVisibility();
     showSection("alumniSection");
     setActiveNav("alumniSection");
     bindSkillSectionChrome();
@@ -1874,6 +1847,7 @@ function setHomeWizardStep(step) {
       }
     }
     updateWizardPrintSummaryVisibility();
+  updateDashboardPrintVisibility();
   }
 }
 
@@ -2195,12 +2169,11 @@ function bindAlumniActions() {
     })();
   });
 
+  const printHandler = () => void openAlumniPrintableResultsPage();
   const printableResultsBtn = document.getElementById("openPrintableResultsBtn");
-  if (printableResultsBtn) {
-    printableResultsBtn.addEventListener("click", () => {
-      void openAlumniPrintableResultsPage();
-    });
-  }
+  if (printableResultsBtn) printableResultsBtn.addEventListener("click", printHandler);
+  const dashboardPrintBtn = document.getElementById("dashboardPrintResultsBtn");
+  if (dashboardPrintBtn) dashboardPrintBtn.addEventListener("click", printHandler);
 }
 
 function renderQuestionnaire(trackKey) {
