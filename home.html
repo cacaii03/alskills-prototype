@@ -198,9 +198,18 @@
                   <p class="wizard-step-desc">
                     Rate how true each statement is for you using <strong>Always</strong>, <strong>Sometimes</strong>, <strong>Maybe</strong>, or <strong>Never</strong>. Items cover program hard skills and shared soft skills.
                   </p>
-                  <article class="card card--form">
-                    <form id="questionnaireForm" class="form form--questionnaire"></form>
-                    <button id="submitResponsesBtn" class="primary ripple btn-submit-responses" type="button">Submit responses</button>
+                  <article class="card card--form card--form-assessment">
+                    <div class="assessment-form-wrap">
+                      <form id="questionnaireForm" class="form form--questionnaire"></form>
+                      <button id="submitResponsesBtn" class="primary ripple btn-submit-responses" type="button">Submit responses</button>
+                      <div id="assessmentSubmitOverlay" class="assessment-submit-overlay hidden" role="status" aria-live="polite" aria-hidden="true">
+                        <div class="assessment-submit-overlay__card">
+                          <div class="workspace-loading-spinner" aria-hidden="true"></div>
+                          <p class="assessment-submit-overlay__title">Saving your assessment</p>
+                          <p class="assessment-submit-overlay__sub muted">Computing scores and locking your official attempt…</p>
+                        </div>
+                      </div>
+                    </div>
                   </article>
                   <div class="step-actions step-actions--split">
                     <button type="button" class="ghost ripple wizard-back" data-prev="1">Back</button>

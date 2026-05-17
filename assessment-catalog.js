@@ -461,6 +461,23 @@
     };
   }
 
+  /** Ordered pill slots for brain dashboard (hard = program + research, soft = six themes). */
+  function alsGetTrackCategoryLayout(trackKey) {
+    var tk = normalizeTrackKey(trackKey);
+    var cats = TRACK_CATEGORY_NAMES[tk];
+    if (!cats) return { hard: [], soft: [] };
+    var hard = [];
+    var i;
+    for (i = 0; i < cats.length; i++) {
+      hard.push({ name: cats[i], pillId: "pill-h" + (i + 1), side: "hard" });
+    }
+    hard.push({ name: RESEARCH_SKILL_CATEGORY, pillId: "pill-h6", side: "hard" });
+    var soft = SOFT_SKILL_CATEGORIES.map(function (name, idx) {
+      return { name: name, pillId: "pill-s" + (idx + 1), side: "soft" };
+    });
+    return { hard: hard, soft: soft };
+  }
+
   global.ALSKILL_ASSESSMENT_ITEM_COUNT = 50;
   global.ALSKILL_MASTERY_THRESHOLD = MASTERY_THRESHOLD;
   global.ALSKILL_COURSE_CATALOG = ALSKILL_COURSE_CATALOG;
@@ -472,6 +489,7 @@
   global.alsSplitHardSoftScores = alsSplitHardSoftScores;
   global.alsHardSoftMeans = alsHardSoftMeans;
   global.alsGetMasteredSkills = alsGetMasteredSkills;
+  global.alsGetTrackCategoryLayout = alsGetTrackCategoryLayout;
   global.alsNormalizeTrackKey = normalizeTrackKey;
   global.alsRecommend = alsRecommend;
 })(typeof window !== "undefined" ? window : globalThis);

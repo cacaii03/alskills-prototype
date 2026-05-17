@@ -324,29 +324,81 @@ function inferTrackKeyFromQuestionId(questionId) {
   return "";
 }
 
+function resolveAssessmentTrackKeyForUser(userId, subjectUser) {
+  const uid = String(userId || "");
+  try {
+    const stored = window.sessionStorage.getItem(LAST_ASSESSMENT_TRACK_PREFIX + uid);
+    if (stored) return stored;
+  } catch (e) {
+    /* ignore */
+  }
+  if (state.currentTrackKey && state.currentUser && String(state.currentUser.user_id) === uid) {
+    return state.currentTrackKey;
+  }
+  const userResponses = state.responses.filter((r) => String(r.user_id) === uid);
+  if (userResponses.length) return inferTrackKeyFromQuestionId(userResponses[0].question_id);
+  if (subjectUser && subjectUser.course && subjectUser.course !== "-") {
+    const cid = normalizeLegacyCourseId(subjectUser.course);
+    const maj = String(subjectUser.major || "").trim();
+    if (maj && maj !== "-") return `${cid}:${maj}`;
+    return cid;
+  }
+  return "";
+}
+
+function likertLabelFromScore(score) {
+  const s = Number(score);
+  if (s >= 4) return "Always";
+  if (s >= 3) return "Sometimes";
+  if (s >= 2) return "Maybe";
+  if (s >= 1) return "Never";
+  return "—";
+}
+
+function masteryStatusFromMean(mean) {
+  const t = typeof ALSKILL_MASTERY_THRESHOLD === "number" ? ALSKILL_MASTERY_THRESHOLD : 3.25;
+  return Number(mean) >= t ? "Mastered" : "Developing";
+}
+
+function setAssessmentSubmitting(busy) {
+  const overlay = document.getElementById("assessmentSubmitOverlay");
+  const btn = document.getElementById("submitResponsesBtn");
+  const form = document.getElementById("questionnaireForm");
+  if (overlay) {
+    overlay.classList.toggle("hidden", !busy);
+    overlay.classList.toggle("assessment-submit-overlay--visible", busy);
+    overlay.setAttribute("aria-hidden", busy ? "false" : "true");
+  }
+  if (btn) {
+    btn.disabled = !!busy;
+    btn.setAttribute("aria-busy", busy ? "true" : "false");
+    btn.textContent = busy ? "Submitting…" : "Submit responses";
+  }
+  if (form) {
+    form.querySelectorAll("input[type=radio]").forEach((el) => {
+      el.disabled = !!busy;
+    });
+  }
+}
+
 /**
- * HTML fragment for printable results: per-item Correct / Wrong only (no stems or keys).
- * "Correct" = response score equals the highest rubric anchor for that catalog item.
+ * Printable per-item summary for the 50-item Likert self-assessment (no question stems).
  */
-function buildAnonymousItemOutcomesSectionHtml(userId) {
+function buildAnonymousItemOutcomesSectionHtml(userId, trackKeyHint) {
   const uid = String(userId || "");
   const userResponses = state.responses.filter((r) => String(r.user_id) === uid);
   if (userResponses.length === 0) {
-    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">No per-item response record is on file for this learner.</p>`;
+    return `<h2 class="results-doc__block-title">Response record</h2><p class="muted">No per-item responses are on file for this learner.</p>`;
   }
   if (typeof alsGetQuestionsForTrack !== "function") {
-    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">Item outcomes require the assessment catalog (reload the page or open results from the alumni workspace).</p>`;
+    return `<h2 class="results-doc__block-title">Response record</h2><p class="muted">Item detail requires the assessment catalog. Reload the page or open results from the alumni workspace.</p>`;
   }
-  const trackKey = inferTrackKeyFromQuestionId(userResponses[0].question_id);
+  const trackKey = trackKeyHint || inferTrackKeyFromQuestionId(userResponses[0].question_id);
   if (!trackKey) {
-    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">Recorded question identifiers do not match the current catalog layout.</p>`;
+    return `<h2 class="results-doc__block-title">Response record</h2><p class="muted">Recorded question identifiers do not match the current catalog layout.</p>`;
   }
   const catalogQs = alsGetQuestionsForTrack(trackKey);
-  const maxByQuestionId = new Map();
-  catalogQs.forEach((q) => {
-    const scores = (q.choices || []).map((c) => Number(c.score)).filter((n) => !Number.isNaN(n));
-    maxByQuestionId.set(q.id, scores.length ? Math.max(...scores) : null);
-  });
+  const metaById = new Map(catalogQs.map((q) => [q.id, q]));
 
   function parseOrder(qid) {
     const m = String(qid).match(/_c(\d+)_q(\d+)$/);
@@ -354,44 +406,56 @@ function buildAnonymousItemOutcomesSectionHtml(userId) {
     return [9999, 9999];
   }
 
-  const graded = [];
+  const rows = [];
   let skipped = 0;
+  const dist = { Always: 0, Sometimes: 0, Maybe: 0, Never: 0 };
   userResponses.forEach((r) => {
     const qid = String(r.question_id || "");
-    const maxS = maxByQuestionId.get(qid);
+    const meta = metaById.get(qid);
     const sc = Number(r.score);
-    if (maxS == null || Number.isNaN(sc)) {
+    if (!meta || Number.isNaN(sc)) {
       skipped += 1;
       return;
     }
-    const correct = sc >= maxS - 1e-9;
-    graded.push({
+    const label = likertLabelFromScore(sc);
+    if (dist[label] != null) dist[label] += 1;
+    rows.push({
       ordKey: parseOrder(qid),
-      outcome: correct ? "Correct" : "Wrong",
-      cls: correct ? "results-outcome-cell--correct" : "results-outcome-cell--wrong"
+      category: meta.category || r.category || "—",
+      label,
+      score: sc,
+      band: masteryStatusFromMean(sc)
     });
   });
-  graded.sort((a, b) => a.ordKey[0] - b.ordKey[0] || a.ordKey[1] - b.ordKey[1]);
+  rows.sort((a, b) => a.ordKey[0] - b.ordKey[0] || a.ordKey[1] - b.ordKey[1]);
 
-  if (graded.length === 0) {
-    return `<h2 class="results-doc__block-title">Scenario item outcomes</h2><p class="muted">No items could be matched to the scoring key${
-      skipped ? ` (${skipped} raw row${skipped === 1 ? "" : "s"} skipped)` : ""
+  if (rows.length === 0) {
+    return `<h2 class="results-doc__block-title">Response record</h2><p class="muted">No items could be matched to the catalog${
+      skipped ? ` (${skipped} row${skipped === 1 ? "" : "s"} skipped)` : ""
     }.</p>`;
   }
 
-  let correct = 0;
-  let wrong = 0;
-  graded.forEach((row) => {
-    if (row.outcome === "Correct") correct += 1;
-    else wrong += 1;
+  const byCategory = new Map();
+  rows.forEach((row, idx) => {
+    const cat = row.category;
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat).push({ ...row, itemNum: idx + 1 });
   });
 
-  const tableRows = graded
-    .map((row, idx) => {
-      const n = idx + 1;
-      return `<tr><td class="results-outcome-ix">${n}</td><td class="${row.cls}">${escapeHtml(row.outcome)}</td></tr>`;
-    })
-    .join("");
+  let tableBody = "";
+  byCategory.forEach((catRows, cat) => {
+    tableBody += `<tr class="results-outcome-cat-row"><td colspan="4"><strong>${escapeHtml(cat)}</strong></td></tr>`;
+    catRows.forEach((row) => {
+      const bandCls =
+        row.band === "Mastered" ? "results-outcome-cell--mastered" : "results-outcome-cell--developing";
+      tableBody += `<tr>
+        <td class="results-outcome-ix">${row.itemNum}</td>
+        <td>${escapeHtml(row.label)}</td>
+        <td class="results-outcome-score">${row.score.toFixed(0)}</td>
+        <td class="${bandCls}">${escapeHtml(row.band)}</td>
+      </tr>`;
+    });
+  });
 
   const skipNote =
     skipped > 0
@@ -399,20 +463,24 @@ function buildAnonymousItemOutcomesSectionHtml(userId) {
       : "";
 
   return `
-      <h2 class="results-doc__block-title">Scenario item outcomes</h2>
-      <p class="results-anon-lede">Scenario text and answer wording are omitted to protect the item bank. Rows are official items in assessment order. Outcomes are labeled <strong>Correct</strong> or <strong>Wrong</strong> only: <strong>Correct</strong> means your recorded score reached the highest rubric anchor for that item; otherwise <strong>Wrong</strong>.</p>
+      <h2 class="results-doc__block-title">Response record by category</h2>
+      <p class="results-anon-lede">Statement text is omitted to protect the item bank. Each row is one self-assessment item in official order, grouped by skill category. Responses use the <strong>Always · Sometimes · Maybe · Never</strong> rubric (scores 4–1). <strong>Mastered</strong> on an item means score 4 (Always); <strong>Developing</strong> means scores 1–3.</p>
       <div class="results-outcome-summary">
-        <span><strong>${correct}</strong> correct</span>
+        <span><strong>${dist.Always}</strong> Always</span>
         <span class="results-outcome-summary__sep" aria-hidden="true">·</span>
-        <span><strong>${wrong}</strong> wrong</span>
+        <span><strong>${dist.Sometimes}</strong> Sometimes</span>
         <span class="results-outcome-summary__sep" aria-hidden="true">·</span>
-        <span class="muted">${graded.length} items in table</span>
+        <span><strong>${dist.Maybe}</strong> Maybe</span>
+        <span class="results-outcome-summary__sep" aria-hidden="true">·</span>
+        <span><strong>${dist.Never}</strong> Never</span>
+        <span class="results-outcome-summary__sep" aria-hidden="true">·</span>
+        <span class="muted">${rows.length} / ${typeof ALSKILL_ASSESSMENT_ITEM_COUNT === "number" ? ALSKILL_ASSESSMENT_ITEM_COUNT : 50} items</span>
       </div>
       ${skipNote}
       <div class="results-outcome-table-wrap">
-        <table class="results-outcome-table" aria-label="Item outcomes without question text">
-          <thead><tr><th scope="col">Item</th><th scope="col">Outcome</th></tr></thead>
-          <tbody>${tableRows}</tbody>
+        <table class="results-outcome-table" aria-label="Self-assessment responses without question text">
+          <thead><tr><th scope="col">#</th><th scope="col">Response</th><th scope="col">Score</th><th scope="col">Item band</th></tr></thead>
+          <tbody>${tableBody}</tbody>
         </table>
       </div>`;
 }
@@ -424,13 +492,34 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
   const tier = getRankTier(overall);
   const level = buildPerformanceLevelLabel(overall);
   const feedbackParas = buildImprovementFeedbackParagraphs(scores, overall);
-  const categoriesHtml = Object.entries(scores)
-    .sort((a, b) => b[1] - a[1])
-    .map(
-      ([cat, val]) =>
-        `<li><span class="results-cat-name">${escapeHtml(cat)}</span><span class="results-cat-score">${formatRubricOverFour(val)}</span></li>`
-    )
-    .join("");
+  const masteryT = typeof ALSKILL_MASTERY_THRESHOLD === "number" ? ALSKILL_MASTERY_THRESHOLD : 3.25;
+  const trackKey = resolveAssessmentTrackKeyForUser(subjectId, subjectUser);
+  const hardSoft =
+    typeof alsHardSoftMeans === "function" ? alsHardSoftMeans(scores) : { hardMean: null, softMean: null };
+  const hardMeanDisp = hardSoft.hardMean != null ? formatRubricOverFour(hardSoft.hardMean) : "—";
+  const softMeanDisp = hardSoft.softMean != null ? formatRubricOverFour(hardSoft.softMean) : "—";
+
+  function categoryListHtml(map) {
+    return Object.entries(map || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, val]) => {
+        const status = masteryStatusFromMean(val);
+        const statusCls =
+          status === "Mastered" ? "results-cat-status--mastered" : "results-cat-status--developing";
+        return `<li><span class="results-cat-name">${escapeHtml(cat)}</span><span class="results-cat-score">${formatRubricOverFour(val)}</span><span class="results-cat-status ${statusCls}">${escapeHtml(status)}</span></li>`;
+      })
+      .join("");
+  }
+
+  const hardCatsHtml =
+    hardSoft.hard && Object.keys(hardSoft.hard).length
+      ? categoryListHtml(hardSoft.hard)
+      : `<li class="muted">No hard-skill categories scored.</li>`;
+  const softCatsHtml =
+    hardSoft.soft && Object.keys(hardSoft.soft).length
+      ? categoryListHtml(hardSoft.soft)
+      : `<li class="muted">No soft-skill categories scored.</li>`;
+
   const feedbackHtml = feedbackParas.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
   const improveBullets = buildDashboardImprovementBullets(scores, overall);
   const improveNextHtml =
@@ -442,7 +531,7 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
           ${improveBullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
         </ul>
       </div>`;
-  const itemOutcomesHtml = buildAnonymousItemOutcomesSectionHtml(subjectId);
+  const itemOutcomesHtml = buildAnonymousItemOutcomesSectionHtml(subjectId, trackKey);
   const majorDisplay =
     subjectUser.major && String(subjectUser.major).trim() && subjectUser.major !== "-"
       ? String(subjectUser.major)
@@ -459,8 +548,9 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
     <article class="results-doc">
       <p class="results-doc__eyebrow">Skill assessment summary</p>
       <h1 class="results-doc__title">${escapeHtml(subjectUser.name)}</h1>
-      <p class="results-doc__meta">ALSKILL · Official skills self-assessment · Category means shown as <strong>mean / 4.00</strong></p>
+      <p class="results-doc__meta">ALSKILL · Official 50-item skills self-assessment · Rubric: Always (4), Sometimes (3), Maybe (2), Never (1) · Category means as <strong>mean / 4.00</strong>${trackKey ? ` · Track: <strong>${escapeHtml(trackKey)}</strong>` : ""}</p>
       ${identityHtml}
+      <p class="results-rubric-legend muted">Category <strong>Mastered</strong> when mean ≥ ${masteryT.toFixed(2)}; otherwise <strong>Developing</strong>. Brain dashboard labels use the same threshold.</p>
       <div class="results-doc__grid">
         <div class="results-stat">
           <p class="results-stat__label">Rating</p>
@@ -468,9 +558,19 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
           <p class="results-stat__hint">${escapeHtml(tier.blurb)}</p>
         </div>
         <div class="results-stat">
-          <p class="results-stat__label">Final score</p>
+          <p class="results-stat__label">Overall mean</p>
           <p class="results-stat__value">${formatRubricOverFour(overall)}</p>
-          <p class="results-stat__hint">Mean of category means (rubric high 4.00)</p>
+          <p class="results-stat__hint">Mean of all category means</p>
+        </div>
+        <div class="results-stat">
+          <p class="results-stat__label">Hard skills mean</p>
+          <p class="results-stat__value">${hardMeanDisp}</p>
+          <p class="results-stat__hint">Program + research categories</p>
+        </div>
+        <div class="results-stat">
+          <p class="results-stat__label">Soft skills mean</p>
+          <p class="results-stat__value">${softMeanDisp}</p>
+          <p class="results-stat__hint">Six shared soft-skill themes</p>
         </div>
         <div class="results-stat">
           <p class="results-stat__label">Proficiency band</p>
@@ -481,12 +581,14 @@ function buildAssessmentResultsArticleHtml(subjectUser, subjectId, scores, overa
       <h2 class="results-doc__block-title">Comments and improvement focus</h2>
       <div class="results-feedback">${feedbackHtml}</div>
       ${improveNextHtml}
-      <h2 class="results-doc__block-title">Category breakdown</h2>
-      <ul class="results-categories">${categoriesHtml}</ul>
+      <h2 class="results-doc__block-title">Hard skill categories</h2>
+      <ul class="results-categories results-categories--split">${hardCatsHtml}</ul>
+      <h2 class="results-doc__block-title">Soft skill categories</h2>
+      <ul class="results-categories results-categories--split">${softCatsHtml}</ul>
       ${itemOutcomesHtml}
       <footer class="results-doc__footer">ALSKILL · ${escapeHtml(
         new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
-      )} · Benchmark reflects the official hard and soft skills assessment.</footer>
+      )} · Official self-assessment benchmark (one attempt per alumni).</footer>
     </article>`;
 }
 
@@ -2026,6 +2128,7 @@ function bindAlumniActions() {
         category: qMeta ? qMeta.category : ""
       };
     });
+    setAssessmentSubmitting(true);
     (async () => {
       try {
         if (USE_REMOTE_API) {
@@ -2086,6 +2189,8 @@ function bindAlumniActions() {
         if (PAGE === "home") setHomeWizardStep(3);
       } catch {
         showHomeToast("Submission failed. Please try again.", "error");
+      } finally {
+        setAssessmentSubmitting(false);
       }
     })();
   });
@@ -2477,8 +2582,18 @@ function renderAlumniKpis() {
     </div>
   `;
 
+  let brainTrack = state.currentTrackKey || "";
+  try {
+    const storedTrack = window.sessionStorage.getItem(LAST_ASSESSMENT_TRACK_PREFIX + uid);
+    if (storedTrack) brainTrack = storedTrack;
+  } catch (e) {
+    /* ignore */
+  }
+  if (!brainTrack && myResponses.length) {
+    brainTrack = inferTrackKeyFromQuestionId(myResponses[0].question_id);
+  }
   if (typeof initAlskillBrainDashboard === "function") {
-    initAlskillBrainDashboard(document.getElementById("brainSceneHost"), scoreMapForCoach);
+    initAlskillBrainDashboard(document.getElementById("brainSceneHost"), scoreMapForCoach, brainTrack);
   }
 }
 

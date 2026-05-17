@@ -1189,6 +1189,12 @@ body[data-page="home"] .topbar--home {
 .brain-pill--visible {
   opacity: 1;
 }
+.brain-pill--developing.brain-pill--visible {
+  opacity: 0.55;
+}
+.brain-pill--mastered.brain-pill--visible {
+  opacity: 1;
+}
 .brain-pill rect {
   transition: fill 0.25s, stroke 0.25s, filter 0.25s;
 }
@@ -2228,6 +2234,101 @@ body[data-page="results"] {
 .results-outcome-cell--wrong {
   font-weight: 600;
   color: #b45309;
+}
+
+.results-outcome-cell--mastered {
+  font-weight: 600;
+  color: #0f766e;
+}
+
+.results-outcome-cell--developing {
+  font-weight: 600;
+  color: #b45309;
+}
+
+.results-outcome-cat-row td {
+  background: #f1f5f9;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  padding-top: 12px;
+  padding-bottom: 8px;
+}
+
+.results-outcome-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #334155;
+}
+
+.results-rubric-legend {
+  font-size: 0.88rem;
+  margin: 0 0 16px;
+}
+
+.results-cat-status {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 8px;
+}
+
+.results-cat-status--mastered {
+  color: #0f766e;
+}
+
+.results-cat-status--developing {
+  color: #b45309;
+}
+
+.card--form-assessment {
+  position: relative;
+}
+
+.assessment-form-wrap {
+  position: relative;
+}
+
+.assessment-submit-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(248, 250, 252, 0.88);
+  backdrop-filter: blur(4px);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.assessment-submit-overlay--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.assessment-submit-overlay__card {
+  text-align: center;
+  padding: 24px 28px;
+  max-width: 320px;
+}
+
+.assessment-submit-overlay__title {
+  margin: 14px 0 4px;
+  font-weight: 700;
+  color: var(--primary-deep);
+}
+
+.assessment-submit-overlay__sub {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.btn-submit-responses[aria-busy="true"] {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .admin-view-results-block {
