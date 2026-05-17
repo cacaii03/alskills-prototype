@@ -246,6 +246,60 @@ function submitAssessment(payload) {
 }
 
 /**
+ * buildAssessmentQuestionSeed_
+ * Returns frequency-based skill assessment rows for all supported courses.
+ */
+function buildAssessmentQuestionSeed_() {
+  var softTemplates = [
+    { category: "Problem Solving", question: "When I face a complex problem, I break it into smaller steps and try different approaches until it is solved." },
+    { category: "Story Telling", question: "I explain my ideas using clear examples and a logical flow that others can follow." },
+    { category: "Collaboration", question: "I actively seek input from teammates or colleagues when working on shared goals." },
+    { category: "Curiosity", question: "I regularly explore new tools, methods, or ideas to improve how I work." },
+    { category: "Communication", question: "I listen carefully and respond thoughtfully in professional conversations." },
+    { category: "Creativity", question: "I propose original solutions when standard approaches are not enough." }
+  ];
+  var hardByCourse = {
+    "BSIT": [
+      { category: "Subject Matter Expertise", question: "I apply programming and IT concepts from my degree to solve real workplace tasks." },
+      { category: "Math & Statistics", question: "I use data, logic, and numerical reasoning to support technical decisions." },
+      { category: "Data & Technical Skills", question: "I am comfortable using databases, systems, and technical tools required in my field." }
+    ],
+    "BSBA - Marketing": [
+      { category: "Subject Matter Expertise", question: "I apply marketing and business concepts from my degree to real workplace challenges." },
+      { category: "Math & Statistics", question: "I interpret metrics and market data to guide business decisions." },
+      { category: "Data & Technical Skills", question: "I use digital tools and platforms to manage campaigns and analyze performance." }
+    ],
+    "BSED": [
+      { category: "Subject Matter Expertise", question: "I apply subject-area teaching knowledge from my degree in classroom or training settings." },
+      { category: "Math & Statistics", question: "I use assessment data and evidence to evaluate learner progress." },
+      { category: "Data & Technical Skills", question: "I use educational technology and digital resources effectively in my practice." }
+    ],
+    "BEED": [
+      { category: "Subject Matter Expertise", question: "I apply elementary education principles from my degree in teaching or training roles." },
+      { category: "Math & Statistics", question: "I track and interpret learner outcomes using classroom data." },
+      { category: "Data & Technical Skills", question: "I integrate age-appropriate technology and learning tools into my work." }
+    ],
+    "BECED": [
+      { category: "Subject Matter Expertise", question: "I apply early childhood education principles from my degree in professional settings." },
+      { category: "Math & Statistics", question: "I use observation records and developmental data to guide instruction." },
+      { category: "Data & Technical Skills", question: "I use child-centered tools and digital resources to support learning." }
+    ]
+  };
+  var courses = Object.keys(hardByCourse);
+  var seed = [];
+  var counter = 1;
+  courses.forEach(function(course) {
+    softTemplates.forEach(function(item) {
+      seed.push(["Q" + counter++, course, item.category, item.question, "frequency"]);
+    });
+    (hardByCourse[course] || []).forEach(function(item) {
+      seed.push(["Q" + counter++, course, item.category, item.question, "frequency"]);
+    });
+  });
+  return seed;
+}
+
+/**
  * initializeDatabase
  * Purpose:
  * Creates required Google Sheets and header rows for ALSKILL.
@@ -282,22 +336,7 @@ function initializeDatabase() {
 
   var questionsSheet = ss.getSheetByName(SHEET_NAMES.QUESTIONS);
   if (questionsSheet.getLastRow() === 1) {
-    var seed = [
-      ["Q1", "BSIT", "Technical Skills", "Rate your programming proficiency (1-5).", "scale"],
-      ["Q2", "BSIT", "Professional Skills", "Rate your experience in system development (1-5).", "scale"],
-      ["Q3", "BSIT", "Technical Skills", "Rate your knowledge in database management (1-5).", "scale"],
-      ["Q4", "BSBA - Marketing", "Professional Skills", "Rate your ability to design marketing strategies (1-5).", "scale"],
-      ["Q5", "BSBA - Marketing", "Technical Skills", "Rate your digital campaign management skills (1-5).", "scale"],
-      ["Q6", "BSED", "Professional Skills", "Rate your lesson planning effectiveness (1-5).", "scale"],
-      ["Q7", "BSED", "Soft Skills", "Rate your classroom management competency (1-5).", "scale"],
-      ["Q8", "BSED", "Soft Skills", "Rate your communication clarity (1-5).", "scale"],
-      ["Q9", "BEED", "Professional Skills", "Rate your lesson planning effectiveness (1-5).", "scale"],
-      ["Q10", "BEED", "Soft Skills", "Rate your classroom management competency (1-5).", "scale"],
-      ["Q11", "BEED", "Soft Skills", "Rate your communication clarity (1-5).", "scale"],
-      ["Q12", "BECED", "Professional Skills", "Rate your lesson planning effectiveness (1-5).", "scale"],
-      ["Q13", "BECED", "Soft Skills", "Rate your classroom management competency (1-5).", "scale"],
-      ["Q14", "BECED", "Soft Skills", "Rate your communication clarity (1-5).", "scale"]
-    ];
+    var seed = buildAssessmentQuestionSeed_();
     questionsSheet.getRange(2, 1, seed.length, seed[0].length).setValues(seed);
   }
 
@@ -595,7 +634,7 @@ function getAdminAnalytics() {
       alumni: anonymized,
       course: userMap[userId].course,
       competencyScore: avg,
-      performanceLevel: avg >= 4 ? "High Proficiency" : "Emerging Proficiency"
+      performanceLevel: avg >= 3.5 ? "High Proficiency" : "Emerging Proficiency"
     };
   });
 
@@ -652,7 +691,7 @@ function getDrillDownData(type, key) {
         course: user.course,
         category: category,
         competencyScore: score,
-        skillProficiency: score >= 4 ? "High Proficiency" : "Development Area"
+        skillProficiency: score >= 3.5 ? "High Proficiency" : "Development Area"
       });
     }
     if (type === "category" && category === key) {
@@ -661,7 +700,7 @@ function getDrillDownData(type, key) {
         course: user.course,
         category: category,
         competencyScore: score,
-        skillProficiency: score >= 4 ? "High Proficiency" : "Development Area"
+        skillProficiency: score >= 3.5 ? "High Proficiency" : "Development Area"
       });
     }
   }

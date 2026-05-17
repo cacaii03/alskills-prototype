@@ -126,32 +126,45 @@
 
         <main class="container">
           <section id="alumniSection" class="panel">
-            <h2>Dashboard</h2>
-            <p class="section-note">Overview of profile completion, competency results, and latest assessment activity.</p>
+            <h2>Skills Brain Dashboard</h2>
+            <p class="section-note">Explore hard and soft skills on the brain map, complete the frequency-based assessment, and review your soft-skill profile.</p>
             <div id="alumniKpi" class="kpi-grid"></div>
+            <article class="card brain-card">
+              <div class="brain-card-head">
+                <h3>Your Skills Brain</h3>
+                <button id="clearBrainFilterBtn" class="ghost ripple" type="button">Show All Skills</button>
+              </div>
+              <div id="brainDashboard" class="brain-dashboard" aria-live="polite"></div>
+            </article>
             <div class="grid two">
+              <article class="card">
+                <h3>Soft Skill Analysis</h3>
+                <div id="softSkillAnalysis" class="soft-skill-analysis muted">Complete the assessment to generate your soft-skill analysis.</div>
+              </article>
               <article class="card">
                 <h3>Profile Summary</h3>
                 <div id="profileCard" class="muted">Please log in as Alumni to view profile details.</div>
               </article>
-              <article class="card">
-                <h3>Skill Questionnaire</h3>
-                <div class="inline-controls">
-                  <label>Course
-                    <select id="questionCourseSelect">
-                      <option>BSIT</option>
-                      <option>BSBA - Marketing</option>
-                      <option>BSED</option>
-                      <option>BEED</option>
-                      <option>BECED</option>
-                    </select>
-                  </label>
-                  <button id="loadQuestionsBtn" class="ghost ripple">Load Questions</button>
-                </div>
-                <form id="questionnaireForm" class="form"></form>
-                <button id="submitResponsesBtn" class="primary ripple">Submit Responses</button>
-              </article>
             </div>
+            <article class="card">
+              <h3>Skill Assessment</h3>
+              <p class="muted">Answer how often each statement applies to you: Always, Sometimes, Maybe, or Never.</p>
+              <div class="inline-controls">
+                <label>Course
+                  <select id="questionCourseSelect">
+                    <option>BSIT</option>
+                    <option>BSBA - Marketing</option>
+                    <option>BSED</option>
+                    <option>BEED</option>
+                    <option>BECED</option>
+                  </select>
+                </label>
+                <button id="loadQuestionsBtn" class="ghost ripple" type="button">Load Assessment</button>
+              </div>
+              <p id="questionFilterNote" class="muted"></p>
+              <form id="questionnaireForm" class="form assessment-form"></form>
+              <button id="submitResponsesBtn" class="primary ripple" type="button">Submit Assessment</button>
+            </article>
             <div class="grid two">
               <article class="card">
                 <h3>Skill Score Cards</h3>

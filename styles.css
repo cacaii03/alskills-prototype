@@ -175,9 +175,86 @@ button { border: 1px solid #d1d5db; border-radius: 10px; background: #fff; color
 @keyframes ripple { to { opacity: 0; transform: translate(-50%, -50%) scale(16); } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+/* Brain skills dashboard */
+.brain-card { overflow: hidden; }
+.brain-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.brain-dashboard { padding: 8px 4px 4px; }
+.brain-headers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+.brain-side-title {
+  text-align: center; font-weight: 700; letter-spacing: 0.06em; font-size: 0.78rem; text-transform: uppercase;
+}
+.brain-side-title.hard { color: #2a9d8f; }
+.brain-side-title.soft { color: #e76f51; }
+.brain-map {
+  display: grid; grid-template-columns: 1fr 6px 1fr; gap: 10px; align-items: stretch;
+  border-radius: 120px 120px 90px 90px; padding: 14px; background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  border: 1px solid var(--border); min-height: 320px;
+}
+.brain-divider {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(42, 157, 143, 0.35), rgba(231, 111, 81, 0.35));
+}
+.brain-half { display: grid; gap: 10px; align-content: center; }
+.brain-lobe {
+  position: relative; overflow: hidden; text-align: left; border: 2px solid transparent; border-radius: 18px;
+  padding: 12px 12px 10px; min-height: 78px; display: grid; gap: 4px; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.brain-lobe.hard { background: linear-gradient(145deg, #2a9d8f 0%, #3bb5a6 100%); color: #fff; }
+.brain-lobe.soft { background: linear-gradient(145deg, #f4a261 0%, #e76f51 100%); color: #fff; }
+.brain-lobe:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,.12); }
+.brain-lobe.active { border-color: #fff; box-shadow: 0 0 0 3px rgba(31, 63, 124, 0.35); }
+.brain-lobe.scored { box-shadow: inset 0 -18px 0 rgba(255,255,255,.12); }
+.lobe-icon { font-size: 1.1rem; }
+.lobe-label { font-size: 0.82rem; font-weight: 600; line-height: 1.25; }
+.lobe-score { font-size: 0.78rem; opacity: 0.95; }
+.lobe-fill {
+  position: absolute; left: 0; bottom: 0; height: 4px; width: var(--fill, 0%);
+  background: rgba(255,255,255,.85); transition: width .35s ease;
+}
+.brain-hint { margin: 10px 2px 0; font-size: 0.86rem; }
+
+.assessment-form { gap: 14px; }
+.assessment-item {
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin: 0; background: #fcfdff;
+}
+.assessment-item legend {
+  font-size: 0.95rem; font-weight: 500; padding: 0 4px 8px; line-height: 1.45;
+}
+.assessment-item small { color: var(--muted); font-weight: 400; }
+.skill-pill {
+  display: inline-block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+  border-radius: 999px; padding: 2px 8px; margin-right: 6px; vertical-align: middle;
+}
+.skill-pill.hard { background: rgba(42, 157, 143, 0.16); color: #1f6f64; }
+.skill-pill.soft { background: rgba(244, 162, 97, 0.22); color: #9a4d12; }
+.freq-group { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.freq-choice {
+  display: grid; justify-items: center; gap: 6px; padding: 8px 6px; border: 1px solid #dbe3ee;
+  border-radius: 10px; background: #fff; font-size: 0.82rem; cursor: pointer; transition: .2s ease;
+}
+.freq-choice:has(input:checked) {
+  border-color: var(--primary); background: #eef4ff; color: var(--primary); font-weight: 600;
+}
+.freq-choice input { margin: 0; accent-color: var(--primary); }
+
+.soft-skill-analysis { min-height: 120px; }
+.soft-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.soft-summary-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fff;
+}
+.soft-summary-card.highlight { border-color: #f4a261; background: linear-gradient(160deg, #fff9f3 0%, #fff 100%); }
+.soft-bars { display: grid; gap: 10px; }
+.soft-bar-row { display: grid; grid-template-columns: 130px 1fr 42px; gap: 10px; align-items: center; font-size: 0.88rem; }
+.soft-bar-track { height: 10px; border-radius: 999px; background: #eceff3; overflow: hidden; }
+.soft-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #f4a261, #e76f51); }
+
 @media (max-width: 980px) {
   .auth-shell { grid-template-columns: 1fr; }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: fixed; left: 0; top: 58px; transform: translateX(-100%); width: 240px; z-index: 30; transition: .3s ease; height: calc(100vh - 58px); }
   .sidebar.open { transform: translateX(0); }
+  .brain-map { border-radius: 24px; grid-template-columns: 1fr; }
+  .brain-divider { height: 6px; width: 100%; }
+  .freq-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .soft-bar-row { grid-template-columns: 1fr; }
 }

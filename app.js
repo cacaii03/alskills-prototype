@@ -33,8 +33,119 @@ const state = {
   responses: [],
   results: [],
   lastComputedScores: {},
+  activeBrainCategory: null,
   charts: {}
 };
+
+const FREQUENCY_CHOICES = [
+  { label: "Always", value: 4 },
+  { label: "Sometimes", value: 3 },
+  { label: "Maybe", value: 2 },
+  { label: "Never", value: 1 }
+];
+
+const SCORE_MAX = 4;
+
+const SOFT_SKILL_CATEGORIES = [
+  "Problem Solving",
+  "Story Telling",
+  "Collaboration",
+  "Curiosity",
+  "Communication",
+  "Creativity"
+];
+
+const HARD_SKILL_CATEGORIES = [
+  "Subject Matter Expertise",
+  "Math & Statistics",
+  "Data & Technical Skills"
+];
+
+const BRAIN_LOBES = {
+  hard: [
+    { category: "Subject Matter Expertise", label: "Subject Matter Expertise", icon: "🎓" },
+    { category: "Math & Statistics", label: "Math & Statistics", icon: "🔢" },
+    { category: "Data & Technical Skills", label: "Data & Technical Skills", icon: "📊" }
+  ],
+  soft: [
+    { category: "Problem Solving", label: "Problem Solving", icon: "💡" },
+    { category: "Story Telling", label: "Story Telling", icon: "✒" },
+    { category: "Collaboration", label: "Collaboration", icon: "👥" },
+    { category: "Curiosity", label: "Curiosity", icon: "❓" },
+    { category: "Communication", label: "Communication", icon: "💬" },
+    { category: "Creativity", label: "Creativity", icon: "🎨" }
+  ]
+};
+
+const SOFT_SKILL_TEMPLATES = [
+  { category: "Problem Solving", question: "When I face a complex problem, I break it into smaller steps and try different approaches until it is solved." },
+  { category: "Story Telling", question: "I explain my ideas using clear examples and a logical flow that others can follow." },
+  { category: "Collaboration", question: "I actively seek input from teammates or colleagues when working on shared goals." },
+  { category: "Curiosity", question: "I regularly explore new tools, methods, or ideas to improve how I work." },
+  { category: "Communication", question: "I listen carefully and respond thoughtfully in professional conversations." },
+  { category: "Creativity", question: "I propose original solutions when standard approaches are not enough." }
+];
+
+const HARD_SKILL_BY_COURSE = {
+  BSIT: [
+    { category: "Subject Matter Expertise", question: "I apply programming and IT concepts from my degree to solve real workplace tasks." },
+    { category: "Math & Statistics", question: "I use data, logic, and numerical reasoning to support technical decisions." },
+    { category: "Data & Technical Skills", question: "I am comfortable using databases, systems, and technical tools required in my field." }
+  ],
+  "BSBA - Marketing": [
+    { category: "Subject Matter Expertise", question: "I apply marketing and business concepts from my degree to real workplace challenges." },
+    { category: "Math & Statistics", question: "I interpret metrics and market data to guide business decisions." },
+    { category: "Data & Technical Skills", question: "I use digital tools and platforms to manage campaigns and analyze performance." }
+  ],
+  BSED: [
+    { category: "Subject Matter Expertise", question: "I apply subject-area teaching knowledge from my degree in classroom or training settings." },
+    { category: "Math & Statistics", question: "I use assessment data and evidence to evaluate learner progress." },
+    { category: "Data & Technical Skills", question: "I use educational technology and digital resources effectively in my practice." }
+  ],
+  BEED: [
+    { category: "Subject Matter Expertise", question: "I apply elementary education principles from my degree in teaching or training roles." },
+    { category: "Math & Statistics", question: "I track and interpret learner outcomes using classroom data." },
+    { category: "Data & Technical Skills", question: "I integrate age-appropriate technology and learning tools into my work." }
+  ],
+  BECED: [
+    { category: "Subject Matter Expertise", question: "I apply early childhood education principles from my degree in professional settings." },
+    { category: "Math & Statistics", question: "I use observation records and developmental data to guide instruction." },
+    { category: "Data & Technical Skills", question: "I use child-centered tools and digital resources to support learning." }
+  ]
+};
+
+function buildQuestionBank() {
+  const courses = Object.keys(HARD_SKILL_BY_COURSE);
+  const questions = [];
+  let counter = 1;
+  courses.forEach((course) => {
+    SOFT_SKILL_TEMPLATES.forEach((item) => {
+      questions.push({
+        id: "Q" + counter++,
+        course,
+        category: item.category,
+        skillType: "soft",
+        question: item.question,
+        type: "frequency"
+      });
+    });
+    (HARD_SKILL_BY_COURSE[course] || []).forEach((item) => {
+      questions.push({
+        id: "Q" + counter++,
+        course,
+        category: item.category,
+        skillType: "hard",
+        question: item.question,
+        type: "frequency"
+      });
+    });
+  });
+  return questions;
+}
+
+function performanceLevel(score) {
+  return Number(score) >= 3.5 ? "High Proficiency" : "Emerging Proficiency";
+}
 
 const DEMO_DB = {
   users: [
@@ -45,34 +156,19 @@ const DEMO_DB = {
     { user_id: "A005", name: "Ethan Cruz", email: "ethan@nbsc.edu", password: "alumni123", course: "BECED", major: "Early Childhood", batch: 2023, role: "Alumni" },
     { user_id: "ADM1", name: "System Administrator", email: "admin@alskill.local", password: "admin123", course: "-", major: "-", batch: 0, role: "Admin" }
   ],
-  questions: [
-    { id: "Q1", course: "BSIT", category: "Technical Skills", question: "Rate your programming proficiency (1-5).", type: "scale" },
-    { id: "Q2", course: "BSIT", category: "Professional Skills", question: "Rate your experience in system development (1-5).", type: "scale" },
-    { id: "Q3", course: "BSIT", category: "Technical Skills", question: "Rate your knowledge in database management (1-5).", type: "scale" },
-    { id: "Q4", course: "BSBA - Marketing", category: "Professional Skills", question: "Rate your ability to design marketing strategies (1-5).", type: "scale" },
-    { id: "Q5", course: "BSBA - Marketing", category: "Technical Skills", question: "Rate your digital campaign management skills (1-5).", type: "scale" },
-    { id: "Q6", course: "BSED", category: "Professional Skills", question: "Rate your lesson planning effectiveness (1-5).", type: "scale" },
-    { id: "Q7", course: "BSED", category: "Soft Skills", question: "Rate your classroom management competency (1-5).", type: "scale" },
-    { id: "Q8", course: "BSED", category: "Soft Skills", question: "Rate your communication clarity (1-5).", type: "scale" },
-    { id: "Q9", course: "BEED", category: "Professional Skills", question: "Rate your lesson planning effectiveness (1-5).", type: "scale" },
-    { id: "Q10", course: "BEED", category: "Soft Skills", question: "Rate your classroom management competency (1-5).", type: "scale" },
-    { id: "Q11", course: "BEED", category: "Soft Skills", question: "Rate your communication clarity (1-5).", type: "scale" },
-    { id: "Q12", course: "BECED", category: "Professional Skills", question: "Rate your lesson planning effectiveness (1-5).", type: "scale" },
-    { id: "Q13", course: "BECED", category: "Soft Skills", question: "Rate your classroom management competency (1-5).", type: "scale" },
-    { id: "Q14", course: "BECED", category: "Soft Skills", question: "Rate your communication clarity (1-5).", type: "scale" }
-  ],
+  questions: buildQuestionBank(),
   responses: [],
   results: [
-    { id: "RES01", user_id: "A001", category: "Technical Skills", score: 4.6, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES02", user_id: "A001", category: "Professional Skills", score: 4.2, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES03", user_id: "A002", category: "Technical Skills", score: 3.8, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES04", user_id: "A002", category: "Professional Skills", score: 4.4, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES05", user_id: "A003", category: "Soft Skills", score: 4.3, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES06", user_id: "A003", category: "Professional Skills", score: 4.1, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES07", user_id: "A004", category: "Soft Skills", score: 3.7, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES08", user_id: "A004", category: "Professional Skills", score: 3.9, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES09", user_id: "A005", category: "Soft Skills", score: 4.0, date: "2026-05-01T09:00:00.000Z" },
-    { id: "RES10", user_id: "A005", category: "Professional Skills", score: 3.8, date: "2026-05-01T09:00:00.000Z" }
+    { id: "RES01", user_id: "A001", category: "Problem Solving", score: 3.75, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES02", user_id: "A001", category: "Communication", score: 3.5, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES03", user_id: "A001", category: "Data & Technical Skills", score: 3.67, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES04", user_id: "A002", category: "Collaboration", score: 3.25, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES05", user_id: "A002", category: "Subject Matter Expertise", score: 3.5, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES06", user_id: "A003", category: "Story Telling", score: 3.5, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES07", user_id: "A003", category: "Curiosity", score: 3.0, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES08", user_id: "A004", category: "Creativity", score: 3.25, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES09", user_id: "A005", category: "Communication", score: 3.5, date: "2026-05-01T09:00:00.000Z" },
+    { id: "RES10", user_id: "A005", category: "Math & Statistics", score: 3.0, date: "2026-05-01T09:00:00.000Z" }
   ]
 };
 
@@ -89,6 +185,7 @@ function init() {
   bindShellInteractions();
   renderAdminDashboard();
   renderAlumniKpis();
+  renderBrainDashboard();
   updateSessionUI();
   setAuthMode("login");
   showSection("authSection");
@@ -348,6 +445,8 @@ function routeToDashboard() {
   }
   showSection("alumniSection");
   setActiveNav("alumniSection");
+  renderBrainDashboard();
+  renderSoftSkillAnalysis(getUserScoreMap());
 }
 
 function setActiveNav(sectionId) {
@@ -390,11 +489,23 @@ function renderProfile() {
 function bindAlumniActions() {
   const loadQuestionsBtn = document.getElementById("loadQuestionsBtn");
   const submitResponsesBtn = document.getElementById("submitResponsesBtn");
+  const clearBrainFilterBtn = document.getElementById("clearBrainFilterBtn");
 
   loadQuestionsBtn.addEventListener("click", () => {
     const course = document.getElementById("questionCourseSelect").value;
     renderQuestionnaire(course);
   });
+
+  if (clearBrainFilterBtn) {
+    clearBrainFilterBtn.addEventListener("click", () => {
+      state.activeBrainCategory = null;
+      const course = document.getElementById("questionCourseSelect").value;
+      renderBrainDashboard();
+      if (document.querySelector("#questionnaireForm .assessment-item")) {
+        renderQuestionnaire(course);
+      }
+    });
+  }
 
   submitResponsesBtn.addEventListener("click", () => {
     if (!state.currentUser || state.currentUser.role !== "Alumni") {
@@ -402,19 +513,28 @@ function bindAlumniActions() {
       return;
     }
     const form = document.getElementById("questionnaireForm");
-    const elements = [...form.querySelectorAll("select[data-question-id]")];
-    if (elements.length === 0) {
+    const fieldsets = [...form.querySelectorAll("fieldset[data-question-id]")];
+    if (fieldsets.length === 0) {
       alert("Load questionnaire first.");
       return;
     }
 
-    const newResponses = elements.map((el) => ({
-      id: "R" + Math.random().toString(36).slice(2, 9),
-      user_id: state.currentUser.user_id,
-      question_id: el.dataset.questionId,
-      answer: el.value,
-      score: Number(el.value)
-    }));
+    const unanswered = fieldsets.filter((fs) => !form.querySelector(`input[name="${fs.dataset.questionId}"]:checked`));
+    if (unanswered.length > 0) {
+      alert(`Please answer all items. ${unanswered.length} question(s) remaining.`);
+      return;
+    }
+
+    const newResponses = fieldsets.map((fs) => {
+      const selected = form.querySelector(`input[name="${fs.dataset.questionId}"]:checked`);
+      return {
+        id: "R" + Math.random().toString(36).slice(2, 9),
+        user_id: state.currentUser.user_id,
+        question_id: fs.dataset.questionId,
+        answer: selected.dataset.answerLabel,
+        score: Number(selected.value)
+      };
+    });
     (async () => {
       try {
         if (USE_REMOTE_API) {
@@ -433,6 +553,8 @@ function bindAlumniActions() {
           const scoreMap = (res.computed && res.computed.scores) ? res.computed.scores : {};
           state.lastComputedScores = scoreMap;
           renderScoreCards(scoreMap);
+          renderBrainDashboard();
+          renderSoftSkillAnalysis(scoreMap);
           drawAlumniCharts(scoreMap);
           await refreshAdminAnalytics();
           renderAlumniKpis();
@@ -444,6 +566,8 @@ function bindAlumniActions() {
         const computed = computeScoresForUser(state.currentUser.user_id);
         state.lastComputedScores = computed;
         renderScoreCards(computed);
+        renderBrainDashboard();
+        renderSoftSkillAnalysis(computed);
         drawAlumniCharts(computed);
         renderAdminDashboard();
         renderAlumniKpis();
@@ -457,26 +581,150 @@ function bindAlumniActions() {
 
 function renderQuestionnaire(course) {
   const form = document.getElementById("questionnaireForm");
-  const questions = state.questions.filter((q) => q.course === course);
+  const filterNote = document.getElementById("questionFilterNote");
+  let questions = state.questions.filter((q) => q.course === course);
+  if (state.activeBrainCategory) {
+    questions = questions.filter((q) => q.category === state.activeBrainCategory);
+  }
   if (questions.length === 0) {
     form.innerHTML = "<p class='muted'>No questionnaire available for this course yet.</p>";
+    if (filterNote) filterNote.textContent = "";
     return;
+  }
+  if (filterNote) {
+    filterNote.textContent = state.activeBrainCategory
+      ? `Showing questions for: ${state.activeBrainCategory}`
+      : "Showing all skill areas for this course.";
   }
   form.innerHTML = questions
     .map(
       (q) => `
-      <label>${q.question} <small>(${q.category})</small>
-        <select data-question-id="${q.id}">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3" selected>3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-        </select>
-      </label>
+      <fieldset class="assessment-item" data-question-id="${q.id}" data-skill-type="${q.skillType || "soft"}">
+        <legend>
+          <span class="skill-pill ${q.skillType === "hard" ? "hard" : "soft"}">${q.skillType === "hard" ? "Hard" : "Soft"}</span>
+          ${q.question}
+          <small>(${q.category})</small>
+        </legend>
+        <div class="freq-group" role="radiogroup" aria-label="${q.category}">
+          ${FREQUENCY_CHOICES.map(
+            (choice) => `
+            <label class="freq-choice">
+              <input type="radio" name="${q.id}" data-answer-label="${choice.label}" value="${choice.value}" />
+              ${choice.label}
+            </label>
+          `
+          ).join("")}
+        </div>
+      </fieldset>
     `
     )
     .join("");
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function getUserScoreMap() {
+  if (Object.keys(state.lastComputedScores).length > 0) return state.lastComputedScores;
+  if (!state.currentUser) return {};
+  const userResults = state.results.filter((r) => r.user_id === state.currentUser.user_id);
+  return Object.fromEntries(userResults.map((r) => [r.category, r.score]));
+}
+
+function renderBrainDashboard() {
+  const container = document.getElementById("brainDashboard");
+  if (!container) return;
+  const scoreMap = getUserScoreMap();
+
+  const lobeButton = (lobe, side) => {
+    const score = scoreMap[lobe.category];
+    const pct = score ? Math.round((Number(score) / SCORE_MAX) * 100) : 0;
+    const active = state.activeBrainCategory === lobe.category ? " active" : "";
+    const scored = score ? " scored" : "";
+    return `
+      <button type="button" class="brain-lobe ${side}${active}${scored}" data-category="${lobe.category}" title="${lobe.label}">
+        <span class="lobe-icon" aria-hidden="true">${lobe.icon}</span>
+        <span class="lobe-label">${lobe.label}</span>
+        ${score ? `<span class="lobe-score">${score} / ${SCORE_MAX}</span>` : `<span class="lobe-score muted">—</span>`}
+        <span class="lobe-fill" style="--fill:${pct}%"></span>
+      </button>
+    `;
+  };
+
+  container.innerHTML = `
+    <div class="brain-headers">
+      <span class="brain-side-title hard">Hard Skill</span>
+      <span class="brain-side-title soft">Soft Skill</span>
+    </div>
+    <div class="brain-map" role="img" aria-label="Interactive skills brain map">
+      <div class="brain-half hard-side">
+        ${BRAIN_LOBES.hard.map((lobe) => lobeButton(lobe, "hard")).join("")}
+      </div>
+      <div class="brain-divider" aria-hidden="true"></div>
+      <div class="brain-half soft-side">
+        ${BRAIN_LOBES.soft.map((lobe) => lobeButton(lobe, "soft")).join("")}
+      </div>
+    </div>
+    <p class="brain-hint muted">Click a lobe to focus the assessment on that skill area. Complete the questionnaire to light up your brain map.</p>
+  `;
+
+  container.querySelectorAll(".brain-lobe").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const category = btn.dataset.category;
+      state.activeBrainCategory = state.activeBrainCategory === category ? null : category;
+      renderBrainDashboard();
+      const courseSelect = document.getElementById("questionCourseSelect");
+      if (courseSelect && document.querySelector("#questionnaireForm .assessment-item")) {
+        renderQuestionnaire(courseSelect.value);
+      }
+    });
+  });
+}
+
+function renderSoftSkillAnalysis(scoreMap) {
+  const container = document.getElementById("softSkillAnalysis");
+  if (!container) return;
+  const entries = SOFT_SKILL_CATEGORIES.map((category) => [category, scoreMap[category]]).filter(([, score]) => score !== undefined);
+  if (entries.length === 0) {
+    container.innerHTML = "<p class='muted'>Complete the soft-skill assessment items to see your analysis.</p>";
+    return;
+  }
+  const softScores = entries.map(([, score]) => Number(score));
+  const average = (softScores.reduce((sum, s) => sum + s, 0) / softScores.length).toFixed(2);
+  const strongest = entries.reduce((best, row) => (row[1] > best[1] ? row : best), entries[0]);
+  const growth = entries.reduce((low, row) => (row[1] < low[1] ? row : low), entries[0]);
+
+  container.innerHTML = `
+    <div class="soft-summary-grid">
+      <article class="soft-summary-card">
+        <p class="kpi-label">Soft Skill Index</p>
+        <p class="kpi-value">${average} / ${SCORE_MAX}</p>
+        <p class="muted">${performanceLevel(average)}</p>
+      </article>
+      <article class="soft-summary-card highlight">
+        <p class="kpi-label">Strongest Area</p>
+        <p class="kpi-value" style="font-size:1rem;">${strongest[0]}</p>
+        <p class="muted">Score: ${strongest[1]}</p>
+      </article>
+      <article class="soft-summary-card">
+        <p class="kpi-label">Growth Focus</p>
+        <p class="kpi-value" style="font-size:1rem;">${growth[0]}</p>
+        <p class="muted">Score: ${growth[1]}</p>
+      </article>
+    </div>
+    <div class="soft-bars">
+      ${entries
+        .map(([category, score]) => {
+          const pct = Math.round((Number(score) / SCORE_MAX) * 100);
+          return `
+            <div class="soft-bar-row">
+              <span>${category}</span>
+              <div class="soft-bar-track"><div class="soft-bar-fill" style="width:${pct}%"></div></div>
+              <strong>${score}</strong>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function computeScoresForUser(userId) {
@@ -518,11 +766,11 @@ function renderScoreCards(scoreMap) {
   scoreCards.classList.remove("muted");
   scoreCards.innerHTML = entries
     .map(([category, score]) => {
-      const level = score >= 4 ? "High Proficiency" : "Emerging Proficiency";
+      const level = performanceLevel(score);
       return `
         <div class="score-card">
           <p><strong>${category}</strong></p>
-          <p>Competency Score: ${score}</p>
+          <p>Competency Score: ${score} / ${SCORE_MAX}</p>
           <p>Performance Level: ${level}</p>
         </div>
       `;
@@ -535,7 +783,10 @@ function drawAlumniCharts(scoreMap) {
   const canvasBar = document.getElementById("alumniBarChart");
   const ctxBar = canvasBar.getContext("2d");
   clearCanvas(ctxBar, canvasBar);
-  drawBars(ctxBar, canvasBar, entries, ["#1d4e89", "#2b6cb0", "#e3b341"]);
+  const palette = entries.map(([category]) =>
+    SOFT_SKILL_CATEGORIES.includes(category) ? "#e76f51" : "#2a9d8f"
+  );
+  drawBars(ctxBar, canvasBar, entries, palette.length ? palette : ["#2a9d8f", "#e76f51"]);
 
   const canvasRadar = document.getElementById("alumniRadarChart");
   const ctxRadar = canvasRadar.getContext("2d");
@@ -622,7 +873,7 @@ function getAdminAnalytics() {
       alumni: anonymize(user.name),
       course: user.course,
       competencyScore: Number(avgScore.toFixed(2)),
-      performanceLevel: avgScore >= 4 ? "High Proficiency" : "Emerging Proficiency"
+      performanceLevel: performanceLevel(avgScore)
     });
 
     if (!courseScores[user.course]) courseScores[user.course] = [];
@@ -780,7 +1031,7 @@ function showCategoryDrillDown(category) {
     .map((user) => {
       const result = state.results.find((r) => r.user_id === user.user_id && r.category === category);
       if (!result) return null;
-      const level = result.score >= 4 ? "High Proficiency" : "Development Area";
+      const level = performanceLevel(result.score) === "High Proficiency" ? "High Proficiency" : "Development Area";
       return {
         alumni: anonymize(user.name),
         course: user.course,
@@ -847,7 +1098,7 @@ function drawBars(ctx, canvas, entries, palette) {
   state.charts.lastRects = [];
   entries.forEach(([label, value], index) => {
     const x = 20 + index * (barWidth + gap);
-    const barHeight = (Number(value) / 5) * barAreaHeight;
+    const barHeight = (Number(value) / SCORE_MAX) * barAreaHeight;
     const y = baseY - barHeight;
     ctx.fillStyle = palette[index % palette.length];
     ctx.fillRect(x, y, barWidth, barHeight);
@@ -866,12 +1117,12 @@ function drawRadar(ctx, canvas, entries) {
   const radius = Math.min(centerX, centerY) - 25;
   const sides = entries.length;
 
-  for (let layer = 1; layer <= 5; layer += 1) {
+  for (let layer = 1; layer <= SCORE_MAX; layer += 1) {
     ctx.beginPath();
     for (let i = 0; i < sides; i += 1) {
       const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
-      const x = centerX + ((radius * layer) / 5) * Math.cos(angle);
-      const y = centerY + ((radius * layer) / 5) * Math.sin(angle);
+      const x = centerX + ((radius * layer) / SCORE_MAX) * Math.cos(angle);
+      const y = centerY + ((radius * layer) / SCORE_MAX) * Math.sin(angle);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -883,8 +1134,8 @@ function drawRadar(ctx, canvas, entries) {
   ctx.beginPath();
   entries.forEach(([_, value], i) => {
     const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
-    const x = centerX + ((radius * value) / 5) * Math.cos(angle);
-    const y = centerY + ((radius * value) / 5) * Math.sin(angle);
+    const x = centerX + ((radius * value) / SCORE_MAX) * Math.cos(angle);
+    const y = centerY + ((radius * value) / SCORE_MAX) * Math.sin(angle);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -911,7 +1162,7 @@ function detectBarClick(event, chartType) {
 
   for (let index = 0; index < entries.length; index += 1) {
     const [label, value] = entries[index];
-    const barHeight = (Number(value) / 5) * barAreaHeight;
+    const barHeight = (Number(value) / SCORE_MAX) * barAreaHeight;
     const barX = 20 + index * (barWidth + gap);
     const barY = baseY - barHeight;
     if (x >= barX && x <= barX + barWidth && y >= barY && y <= baseY) return label;
