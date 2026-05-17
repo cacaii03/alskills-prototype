@@ -122,7 +122,7 @@ function hasOfficialAttemptDone(uid) {
     /* ignore */
   }
   const responsesCount = state.responses.filter((r) => r.user_id === uid).length;
-  if (responsesCount >= 35) return true;
+  if (responsesCount >= 48) return true;
   const categories = new Set(state.results.filter((r) => r.user_id === uid).map((r) => r.category));
   return categories.size >= 10;
 }
@@ -310,12 +310,13 @@ function knownAssessmentTrackKeys() {
   if (typeof ALSKILL_TRACK_CATEGORY_NAMES === "object" && ALSKILL_TRACK_CATEGORY_NAMES) {
     return Object.keys(ALSKILL_TRACK_CATEGORY_NAMES);
   }
-  return ["BSCT", "BSBA:MM", "BSBA:OM", "BSBA:FM", "BSED:EN", "BSED:MA", "BECED", "BEED"];
+  return ["BSIT", "BSBA:MM", "BSBA:OM", "BSBA:FM", "BSED:EN", "BSED:MA", "BECED", "BEED"];
 }
 
 /** Map legacy `question_id` prefix to the catalog track used to build items. */
 function inferTrackKeyFromQuestionId(questionId) {
   const qid = String(questionId || "");
+  if (qid.startsWith("BSCT_c")) return "BSIT";
   for (const tk of knownAssessmentTrackKeys()) {
     const safe = tk.replace(/:/g, "_");
     if (qid.startsWith(safe + "_c")) return tk;
@@ -667,7 +668,7 @@ async function openSkillResultsIfLocked() {
 
 const DEMO_DB = {
   users: [
-    { user_id: "A001", name: "Liam Ortega", email: "liam@nbsc.edu", password: "alumni123", course: "BSCT", major: "-", batch: 2023, role: "Alumni" },
+    { user_id: "A001", name: "Liam Ortega", email: "liam@nbsc.edu", password: "alumni123", course: "BSIT", major: "-", batch: 2023, role: "Alumni" },
     { user_id: "A002", name: "Ava Medina", email: "ava@nbsc.edu", password: "alumni123", course: "BSBA", major: "MM", batch: 2022, role: "Alumni" },
     { user_id: "A003", name: "Noah Villanueva", email: "noah@nbsc.edu", password: "alumni123", course: "BSED", major: "EN", batch: 2021, role: "Alumni" },
     { user_id: "A004", name: "Mia Navarro", email: "mia@nbsc.edu", password: "alumni123", course: "BEED", major: "-", batch: 2020, role: "Alumni" },
@@ -1812,10 +1813,11 @@ function escapeHtml(text) {
 function normalizeLegacyCourseId(courseRaw) {
   const s = String(courseRaw || "").trim();
   const map = {
-    BSIT: "BSCT",
-    "BSBA - Marketing": "BSBA",
-    "BS Computer Technology": "BSCT",
-    "Bachelor of Science in Computer Technology": "BSCT"
+    BSCT: "BSIT",
+    "BS Computer Technology": "BSIT",
+    "Bachelor of Science in Computer Technology": "BSIT",
+    "Bachelor of Science in Information Technology": "BSIT",
+    "BSBA - Marketing": "BSBA"
   };
   return map[s] || s;
 }
@@ -1893,7 +1895,7 @@ function syncAssessmentSelectorsFromProfile() {
 
 function applyRecommendationFromScores(scoreMap, trackKey) {
   if (typeof alsRecommend !== "function") return;
-  const tk = trackKey || state.currentTrackKey || "BSCT";
+  const tk = trackKey || state.currentTrackKey || "BSIT";
   state.lastRecommendation = alsRecommend(scoreMap, tk);
   renderRecommendations(state.lastRecommendation);
 }
@@ -2119,7 +2121,7 @@ function renderQuestionnaire(trackKey) {
     return;
   }
   if (hint) {
-    hint.textContent = `${questions.length} self-assessment items loaded. Rate each with Always, Sometimes, Maybe, or Never, then continue.`;
+    hint.textContent = `${questions.length} self-assessment items loaded (50 expected). Use Always, Sometimes, Maybe, or Never for each statement.`;
   }
   if (continueBtn) continueBtn.disabled = false;
   form.innerHTML = questions
@@ -2448,6 +2450,7 @@ function renderAlumniKpis() {
 
   container.innerHTML = `
     <div class="brain-dashboard">
+      <div class="brain-scene-host" id="brainSceneHost" aria-live="polite"></div>
       <div class="brain-dashboard__summary">
         <article class="brain-summary-card ${tier.cls}">
           <p class="brain-summary-card__label">Overall profile</p>
@@ -2470,7 +2473,6 @@ function renderAlumniKpis() {
           </article>
         </div>
       </div>
-      <div class="brain-scene-host" id="brainSceneHost" aria-live="polite"></div>
       ${coachHtml}
     </div>
   `;

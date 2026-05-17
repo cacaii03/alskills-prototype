@@ -1071,6 +1071,50 @@ body[data-page="home"] .topbar--home {
   border: 1px solid #1e293b;
   background: #0d0e10;
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+  margin-bottom: 18px;
+}
+
+.brain-scene--empty .brain-scene__svg {
+  opacity: 0.35;
+}
+
+.brain-scene__empty {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background: rgba(13, 14, 16, 0.72);
+  backdrop-filter: blur(4px);
+}
+.brain-scene__empty[hidden] {
+  display: none !important;
+}
+.brain-scene__empty-title {
+  margin: 0 0 10px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.brain-scene__empty-hint {
+  margin: 0 0 8px;
+  max-width: 420px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+.brain-scene__empty-hint strong {
+  color: #7fffd4;
+}
+.brain-scene__empty-sub {
+  margin: 0;
+  max-width: 400px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .brain-scene {

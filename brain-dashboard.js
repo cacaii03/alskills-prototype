@@ -4,62 +4,44 @@
 (function (global) {
   "use strict";
 
-  var HARD_CROSS = ["Math & Statistics", "Data & Technical Skill"];
-
-  var PILL_CONFIG = [
-    { id: "pill-h1", side: "hard", key: "__subject__", defaultTip: "Domain knowledge & deep specialization" },
-    { id: "pill-h2", side: "hard", key: "Math & Statistics", defaultTip: "Quantitative analysis & modeling" },
-    { id: "pill-h3", side: "hard", key: "Data & Technical Skill", defaultTip: "Systems, tools & engineering craft" },
-    { id: "pill-s1", side: "soft", key: "Problem Solving", defaultTip: "Critical thinking & structured analysis" },
-    { id: "pill-s2", side: "soft", key: "Storytelling", defaultTip: "Narrative craft & persuasive communication" },
-    { id: "pill-s3", side: "soft", key: "Collaboration", defaultTip: "Teamwork, empathy & shared goals" },
-    { id: "pill-s4", side: "soft", key: "Curiosity", defaultTip: "Relentless learning & open inquiry" },
-    { id: "pill-s5", side: "soft", key: "Communication", defaultTip: "Clarity, listening & clear expression" },
-    { id: "pill-s6", side: "soft", key: "Creativity", defaultTip: "Innovation, ideation & original thinking" }
-  ];
+  var HARD_PILL_IDS = ["pill-h1", "pill-h2", "pill-h3"];
+  var SOFT_PILL_IDS = ["pill-s1", "pill-s2", "pill-s3", "pill-s4", "pill-s5", "pill-s6"];
 
   function formatMean(score) {
     if (score == null || Number.isNaN(Number(score))) return "—";
     return Number(score).toFixed(2) + " / 4.00";
   }
 
-  function subjectExpertiseMean(hardMap) {
-    var keys = Object.keys(hardMap || {}).filter(function (k) {
-      return HARD_CROSS.indexOf(k) < 0;
-    });
-    if (!keys.length) return null;
-    var sum = 0;
-    var n = 0;
-    keys.forEach(function (k) {
-      var v = Number(hardMap[k]);
-      if (!Number.isNaN(v)) {
-        sum += v;
-        n += 1;
-      }
-    });
-    return n ? Number((sum / n).toFixed(2)) : null;
+  function truncateLabel(name, maxLen) {
+    var s = String(name || "");
+    if (s.length <= maxLen) return s;
+    return s.slice(0, maxLen - 1) + "…";
   }
 
-  function resolvePillScores(categoryScores) {
-    var split =
-      typeof alsHardSoftMeans === "function"
-        ? alsHardSoftMeans(categoryScores || {})
-        : { hard: {}, soft: {} };
-    var hard = split.hard || {};
-    var soft = split.soft || {};
-    var subject = subjectExpertiseMean(hard);
-    var out = {};
-    PILL_CONFIG.forEach(function (p) {
-      if (p.key === "__subject__") out[p.id] = subject;
-      else if (p.side === "hard") out[p.id] = hard[p.key] != null ? Number(hard[p.key]) : null;
-      else out[p.id] = soft[p.key] != null ? Number(soft[p.key]) : null;
-    });
-    return out;
+  function setPillLabel(pillEl, displayName, score) {
+    if (!pillEl) return;
+    var labelEl = pillEl.querySelector(".brain-pill__label");
+    var scoreEl = pillEl.querySelector(".brain-pill__score");
+    if (labelEl) labelEl.textContent = truncateLabel(displayName, 22);
+    if (scoreEl) scoreEl.textContent = formatMean(score);
+    pillEl.setAttribute("data-category", displayName);
+    pillEl.setAttribute("data-tip", "Mastered skill · mean " + formatMean(score));
   }
 
-  function strength01(score) {
-    if (score == null || Number.isNaN(Number(score))) return 0;
-    return Math.max(0, Math.min(1, (Number(score) - 1) / 3));
+  function getMastered(categoryScores) {
+    if (typeof alsGetMasteredSkills === "function") {
+      return alsGetMasteredSkills(categoryScores || {});
+    }
+    return { hard: [], soft: [], hasData: Object.keys(categoryScores || {}).length > 0 };
+  }
+
+  function softCategoryForPillId(pillId) {
+    var softCats =
+      typeof ALSKILL_SOFT_SKILL_CATEGORIES !== "undefined"
+        ? ALSKILL_SOFT_SKILL_CATEGORIES
+        : ["Problem Solving", "Storytelling", "Collaboration", "Curiosity", "Communication", "Creativity"];
+    var idx = SOFT_PILL_IDS.indexOf(pillId);
+    return idx >= 0 ? softCats[idx] : null;
   }
 
   function buildPillSvgHard(id, ax, ay, lx, ly, rx, ry, label) {
@@ -140,13 +122,17 @@
 
   function brainSceneHtml() {
     var h =
-      '<motion class="brain-scene" id="alsBrainScene" aria-label="Interactive skills brain map">' +
-      '<motion class="brain-scene__glow brain-scene__glow--teal"></motion>' +
-      '<motion class="brain-scene__glow brain-scene__glow--amber"></motion>' +
-      '<motion class="brain-scene__tooltip" id="alsBrainTooltip" role="tooltip"></motion>' +
+      '<div class="brain-scene" id="alsBrainScene" aria-label="Interactive skills brain map">' +
+      '<div class="brain-scene__empty" id="alsBrainEmpty" hidden>' +
+      '<p class="brain-scene__empty-title">No data yet</p>' +
+      '<p class="brain-scene__empty-hint">Complete your official skills assessment in <strong>Test your skill</strong>.</p>' +
+      '<p class="brain-scene__empty-sub">Mastered skills (mean ≥ 3.25) will appear as labels on the brain.</p>' +
+      "</div>" +
+      '<div class="brain-scene__glow brain-scene__glow--teal"></div>' +
+      '<div class="brain-scene__glow brain-scene__glow--amber"></div>' +
+      '<div class="brain-scene__tooltip" id="alsBrainTooltip" role="tooltip"></div>' +
       '<svg class="brain-scene__svg" viewBox="0 0 760 600" xmlns="http://www.w3.org/2000/svg" id="alsBrainSvg">';
-    h = h.replace(/<motion /g, "<motion ").replace(/<\/motion>/g, "</motion>");
-    h = h.replace(/motion/g, "div");
+    h = h.replace(/<\/motion>/g, "</div>");
     return (
       h +
       '<defs>' +
@@ -168,9 +154,9 @@
       '<path id="als-hover-right" d="M380,175 C390,155 412,142 435,140 C462,138 485,148 502,162 C522,178 532,200 536,222 C542,248 538,270 546,292 C554,316 570,330 572,355 C574,378 564,398 548,412 C534,424 514,430 498,434 C482,438 464,438 448,436 C432,434 418,428 405,420 C396,414 388,406 382,396 C381,390 380,384 380,378 L380,175 Z" fill="transparent" style="cursor:pointer"/>' +
       '<line x1="380" y1="162" x2="380" y2="432" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-dasharray="5 4"/>' +
       "</g><g id=\"als-ripple-layer\"></g>" +
-      buildPillSvgHard("pill-h1", 248, 200, 152, 210, 30, 194, "🎓 Subject Expertise") +
-      buildPillSvgHard("pill-h2", 228, 278, 152, 278, 30, 262, "📊 Math &amp; Statistics") +
-      buildPillSvgHard("pill-h3", 218, 360, 152, 360, 30, 344, "⚙️ Data &amp; Technical") +
+      buildPillSvgHard("pill-h1", 248, 200, 152, 210, 30, 194, "Hard skill") +
+      buildPillSvgHard("pill-h2", 228, 278, 152, 278, 30, 262, "Hard skill") +
+      buildPillSvgHard("pill-h3", 218, 360, 152, 360, 30, 344, "Hard skill") +
       buildPillSvgSoft("pill-s1", 512, 193, 608, 193, 610, 177, "💡 Problem Solving") +
       buildPillSvgSoft("pill-s2", 532, 243, 608, 243, 610, 227, "📖 Storytelling") +
       buildPillSvgSoft("pill-s3", 545, 295, 608, 295, 610, 279, "🤝 Collaboration") +
@@ -199,40 +185,82 @@
     for (i = 0; i < hardPills.length; i++) allPills.push(hardPills[i]);
     for (i = 0; i < softPills.length; i++) allPills.push(softPills[i]);
 
-    var pillScores = resolvePillScores(categoryScores);
-    PILL_CONFIG.forEach(function (cfg) {
-      var el = scene.querySelector("#" + cfg.id);
-      if (!el) return;
-      var score = pillScores[cfg.id];
-      el.setAttribute("data-tip", cfg.defaultTip);
-      el.setAttribute("data-category", cfg.key === "__subject__" ? "Subject Matter Expertise" : cfg.key);
-      var strength = strength01(score);
-      el.style.setProperty("--pill-strength", String(strength));
-      var scoreEl = el.querySelector(".brain-pill__score");
-      if (score != null && !Number.isNaN(score)) {
-        el.classList.add("brain-pill--has-score");
-        if (scoreEl) scoreEl.textContent = formatMean(score);
-      } else if (scoreEl) {
-        scoreEl.textContent = "No data yet";
-      }
-    });
+    var mastered = getMastered(categoryScores);
+    var emptyEl = scene.querySelector("#alsBrainEmpty");
+    var visiblePills = [];
+    var hi;
+    var si;
+    var pillEl;
+    var m;
 
-    for (i = 0; i < hardPills.length; i++) {
+    for (i = 0; i < allPills.length; i++) {
+      allPills[i].style.display = "none";
+      allPills[i].classList.remove("brain-pill--visible", "brain-pill--has-score");
+    }
+
+    if (!mastered.hasData) {
+      scene.classList.add("brain-scene--empty");
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
+
+    scene.classList.remove("brain-scene--empty");
+    if (emptyEl) emptyEl.hidden = true;
+
+    for (hi = 0; hi < HARD_PILL_IDS.length; hi++) {
+      m = mastered.hard[hi];
+      pillEl = scene.querySelector("#" + HARD_PILL_IDS[hi]);
+      if (!m || !pillEl) continue;
+      pillEl.style.display = "";
+      setPillLabel(pillEl, m.name, m.score);
+      pillEl.classList.add("brain-pill--has-score");
+      visiblePills.push(pillEl);
+    }
+
+    for (si = 0; si < SOFT_PILL_IDS.length; si++) {
+      var softKey = softCategoryForPillId(SOFT_PILL_IDS[si]);
+      if (!softKey) continue;
+      m = null;
+      for (i = 0; i < mastered.soft.length; i++) {
+        if (mastered.soft[i].name === softKey) {
+          m = mastered.soft[i];
+          break;
+        }
+      }
+      pillEl = scene.querySelector("#" + SOFT_PILL_IDS[si]);
+      if (!m || !pillEl) continue;
+      pillEl.style.display = "";
+      setPillLabel(pillEl, m.name, m.score);
+      pillEl.classList.add("brain-pill--has-score");
+      visiblePills.push(pillEl);
+    }
+
+    if (visiblePills.length === 0) {
+      scene.classList.add("brain-scene--empty");
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.querySelector(".brain-scene__empty-title").textContent = "No mastered skills yet";
+        var hint = emptyEl.querySelector(".brain-scene__empty-hint");
+        if (hint) {
+          hint.innerHTML =
+            "You have assessment data, but no category reached the mastery band (mean ≥ 3.25). Retake practice or review weaker areas in <strong>Test your skill</strong>.";
+        }
+      }
+      return;
+    }
+
+    for (i = 0; i < visiblePills.length; i++) {
       (function (el, idx) {
         setTimeout(function () {
           el.style.transform = "translateX(0)";
           el.classList.add("brain-pill--visible");
-        }, 800 + idx * 200);
-      })(hardPills[i], i);
+        }, 600 + idx * 120);
+      })(visiblePills[i], i);
     }
-    for (i = 0; i < softPills.length; i++) {
-      (function (el, idx) {
-        setTimeout(function () {
-          el.style.transform = "translateX(0)";
-          el.classList.add("brain-pill--visible");
-        }, 900 + idx * 160);
-      })(softPills[i], i);
-    }
+
+    allPills = visiblePills;
+    hardPills = scene.querySelectorAll(".brain-pill--hard.brain-pill--visible");
+    softPills = scene.querySelectorAll(".brain-pill--soft.brain-pill--visible");
 
     function activateSide(side) {
       scene.classList.add(side === "hard" ? "brain-scene--hover-hard" : "brain-scene--hover-soft");
@@ -293,16 +321,10 @@
           scene.classList.add(sc);
           scanEl.style.opacity = "1";
           dimOthers(pill);
-          var score = pillScores[pill.id];
           var cat = pill.getAttribute("data-category") || "";
           var tip = pill.getAttribute("data-tip") || "";
           if (tooltip) {
-            tooltip.innerHTML =
-              "<strong>" +
-              cat +
-              "</strong><br>" +
-              tip +
-              (score != null ? "<br>Mean: <strong>" + formatMean(score) + "</strong>" : "<br><em>Complete your assessment</em>");
+            tooltip.innerHTML = "<strong>" + cat + "</strong><br>" + tip;
             tooltip.classList.add("brain-scene__tooltip--show");
           }
         });
